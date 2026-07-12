@@ -1,0 +1,7 @@
+streamlit>=1.40
+beautifulsoup4>=4.12
+pypdf>=5.0
+requests>=2.32
+python-dotenv>=1.0
+rapidocr>=3.4
+onnxruntime>=1.18

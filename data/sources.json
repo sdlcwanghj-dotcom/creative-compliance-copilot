@@ -1,0 +1,52 @@
+[
+  {
+    "id": "LAW-AD-2021",
+    "title": "中华人民共和国广告法",
+    "authority": "中国政府网",
+    "url": "https://www.gov.cn/guoqing/2021-10/29/content_5647620.htm",
+    "local_file": "legal_sources/advertising_law_2021.html",
+    "source_type": "法律",
+    "retrieved_at": "2026-07-12",
+    "verified": true
+  },
+  {
+    "id": "REG-COS-2020",
+    "title": "化妆品监督管理条例",
+    "authority": "中国政府网",
+    "url": "https://www.gov.cn/zhengce/content/2020-06/29/content_5522593.htm",
+    "local_file": "legal_sources/cosmetics_supervision_regulation_2020.html",
+    "source_type": "行政法规",
+    "retrieved_at": "2026-07-12",
+    "verified": true
+  },
+  {
+    "id": "NMPA-COS-CLAIM-2021",
+    "title": "化妆品功效宣称评价规范",
+    "authority": "国家药品监督管理局",
+    "url": "https://www.nmpa.gov.cn/xxgk/ggtg/hzhpggtg/jmhzhptg/20210409160321110.html",
+    "local_file": "legal_sources/cosmetics_claims_evaluation_2021.html",
+    "source_type": "部门规范",
+    "retrieved_at": "2026-07-12",
+    "verified": true
+  },
+  {
+    "id": "LAW-FOOD-SAFETY",
+    "title": "中华人民共和国食品安全法",
+    "authority": "中国政府网",
+    "url": "https://www.gov.cn/zhengce/2015-04/25/content_2853643.htm",
+    "local_file": "legal_sources/food_safety_law_2015.html",
+    "source_type": "法律（历史正文）",
+    "retrieved_at": "2026-07-12",
+    "verified": true
+  },
+  {
+    "id": "LAW-FOOD-AMEND-2025",
+    "title": "全国人大常委会关于修改食品安全法的决定（2025）",
+    "authority": "中国人大网",
+    "url": "http://www.npc.gov.cn/npc/c1773/c1848/c21114/spaqfxz/spaqfxz002/202509/t20250915_447850.html",
+    "local_file": "legal_sources/food_safety_law_amendment_2025.html",
+    "source_type": "修正决定",
+    "retrieved_at": "2026-07-12",
+    "verified": true
+  }
+]

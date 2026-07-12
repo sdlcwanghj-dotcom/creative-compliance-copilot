@@ -1,0 +1,32 @@
+[
+  {
+    "source_id": "LAW-AD-2021",
+    "status": "indexed",
+    "characters": 11187,
+    "chunks": 13
+  },
+  {
+    "source_id": "REG-COS-2020",
+    "status": "indexed",
+    "characters": 13339,
+    "chunks": 16
+  },
+  {
+    "source_id": "NMPA-COS-CLAIM-2021",
+    "status": "indexed",
+    "characters": 779,
+    "chunks": 1
+  },
+  {
+    "source_id": "LAW-FOOD-SAFETY",
+    "status": "indexed",
+    "characters": 29946,
+    "chunks": 34
+  },
+  {
+    "source_id": "LAW-FOOD-AMEND-2025",
+    "status": "indexed",
+    "characters": 916,
+    "chunks": 1
+  }
+]

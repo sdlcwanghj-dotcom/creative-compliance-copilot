@@ -1,0 +1,202 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<title> 全国人民代表大会常务委员会关于修改《中华人民共和国食品安全法》的决定_中国人大网</title>
+<meta name="keywords" content=""/>
+<link type="text/css" href="../../../../../../images/common_content.css" rel="stylesheet" />
+<link type="text/css" href="../../../../../../images/secondlevel.css" rel="stylesheet" />
+<script src="../../../../../../images/jquery.min.js" type="text/javascript" charset="utf-8"></script>
+<!-- 引入video.js相关文件 -->
+        <link href="/npcVideo/video.js/video-js.min.css" rel="stylesheet">
+        <script src="/npcVideo/video.js/ie8/videojs-ie8.min.js" type="text/javascript"></script>
+        <script src="/npcVideo/video.js/video.min.js" type="text/javascript"></script>
+        <script src="/npcVideo/video.js/lang/zh-CN.js" type="text/javascript"></script>
+
+        <!-- 引入audio.js相关文件 -->
+        <script src="/npcVideo/audio.js/audio.min.js" type="text/javascript"></script>
+        <script src="/npcVideo/audio.js/audioplayer.min.js" type="text/javascript"></script>
+
+        <!-- 增加一个样式，用于初始隐藏WCM生成的播放代码，可加到网站主样式表 -->
+        <style type="text/css">
+            .video_hide {
+                display: none;
+            }
+            .audio_hide {
+                display: none;
+            }
+             .video-js {background:none!important;width: 100%!important;}
+        </style>
+
+        <script type="text/javascript">
+            //判断是否是移动设备
+            var isMobile = {
+                Android: function() {
+                    return navigator.userAgent.match(/Android/i) ? true : false;
+                },
+                BlackBerry: function() {
+                    return navigator.userAgent.match(/BlackBerry/i) ? true : false;
+                },
+                iOS: function() {
+                    return navigator.userAgent.match(/iPhone|iPad|iPod/i) ? true : false;
+                },
+                Windows: function() {
+                    return navigator.userAgent.match(/IEMobile/i) ? true : false;
+                },
+                any: function() {
+                    return (isMobile.Android() || isMobile.BlackBerry() || isMobile.iOS() || isMobile.Windows());
+                }
+            };
+
+            $(document).ready(function() {
+                //设置flash播放器的地址，如果浏览器不支持html5，会用这个flash播放器播放
+                videojs.options.flash.swf = "video.js/video-js.swf";
+
+                //遍历WCM生成的视频播放代码
+                $("embed[mediatype=video]").each(function(index, el) {
+                    //从原始标签中获取播放属性（高宽、自动播放、循环播放、显示控制条等）
+                    //loop属性通过HTML属性获取，用jquery获取有误
+                    var loop = $(this)[0].getAttribute('loop') == 1;
+                    var autoplay = $(this).attr('autostart') == 1;
+                    var controls = $(this).attr('menu') == 1;
+                    var options = {
+                        "controls": controls,
+                        "autoplay": autoplay,
+                        "loop": loop,
+                        "width": $(this).attr('width'),
+                        "height": $(this).attr('height'),
+                        "language": "zh-CN"
+                    };
+                    //生成video标签
+                    var video = $('<video>').addClass('video-js vjs-default-skin vjs-big-play-centered')
+                        .attr('id', 'videojs_' + index)
+                        .append($('<source>').attr({
+                            'type': 'video/mp4',
+                            'src': $(this).attr('src')
+                        }));
+                    //将原播放标签替换
+                    $(this).replaceWith(video);
+                    //初始化播放代码
+                    var myPlayer = videojs("videojs_" + index, options);
+                });
+
+                //遍历WCM生成的音频播放代码
+                $("embed[mediatype=audio]").each(function(index, el) {
+                    //从原始标签中获取播放属性（自动播放、循环播放）
+                    //loop属性通过HTML属性获取，用jquery获取有误
+                    var loop = $(this)[0].getAttribute('loop') == 1;
+                    var autoplay = $(this).attr('autostart') == 1;
+                    //生成audio标签
+                    var audio = $('<audio>')
+                        .attr('controls', 'controls')
+                        .attr('preload', 'auto')
+                        .attr('src', $(this).attr('src'));
+                    if (loop) audio.attr('loop', 'loop');
+                    if (autoplay) audio.attr('autoplay', 'autoplay');
+                    //将原播放标签替换
+                    $(this).replaceWith(audio);
+                    
+                });
+                //根据不同的设备（PC/移动）调用不同的显示方式
+                if (!isMobile.any()) {
+                    //$('<script>').attr('src', 'audio.js/audio.min.js').appendTo('body');
+                    var as = audiojs.createAll();
+                } else {
+                    //$('<script>').attr('src', 'audio.js/audioplayer.min.js').appendTo('body');
+                    $('<link>').attr('href', 'audio.js/audioplayer.css').attr('rel', 'stylesheet').appendTo('body');
+                    $('audio').audioPlayer();
+                }
+            });
+        </script>
+</head>
+<body>
+<a name="top1" id="top1"></a> 
+
+<div class="wrap01"><iframe id="headIfr" src="../../../../../../c191/c12481/c12451/" width="100%" height="209" frameborder="0" scrolling="no" marginheight="0"></iframe></div>
+
+<div class="wrapper">
+<div class="content">
+<div class="article-crumbs">当前位置：<a href="../../../../../../" title="首页" class="CurrChnlCls">首页</a>&nbsp;&gt;&nbsp;<a href="../../../../../" title="专题集锦" class="CurrChnlCls">专题集锦</a>&nbsp;&gt;&nbsp;<a href="../../../../" title="立法" class="CurrChnlCls">立法</a>&nbsp;&gt;&nbsp;<a href="../../" title="食品安全法修正" class="CurrChnlCls">食品安全法修正</a>&nbsp;&gt;&nbsp;<a href="../" title="最新动态" class="CurrChnlCls">最新动态</a></div>
+
+<div class="fl w680">
+<div class="tit"><h2></h2>
+<h1>全国人民代表大会常务委员会关于修改<div>《中华人民共和国食品安全法》的决定</div></h1>
+<h3>（2025年9月12日第十四届全国人民代表大会常务委员会第十七次会议通过）</h3>
+<p></p>
+<p></p>
+</div>
+
+<div class="fontsize"> 来源： 中国人大网&nbsp;&nbsp;浏览字号： <a href="#" onclick="Zoom.style.fontSize='24px';">大</a> <a href="#" onclick="Zoom.style.fontSize='16px';">中</a> <a href="#" onclick="Zoom.style.fontSize='12px';">小</a>
+<span class="fr" id="zzrq"></span>  
+  </div>
+<script type="text/javascript">
+    $(function(){
+        var fbrq = "2025年09月12日 21:08"
+        if($('#zzrq').html() == ''){
+            $('#zzrq').html(fbrq);
+        }
+    })
+</script>
+<div id="Zoom">
+<div class=TRS_Editor><div>　　第十四届全国人民代表大会常务委员会第十七次会议决定对《中华人民共和国食品安全法》作如下修改：</div>
+<div>　　<font face="黑体">一</font>、第四十一条增加四款，作为第二款至第五款：“国家对重点液态食品道路散装运输实行许可制度。道路运输经营者从事重点液态食品散装运输，应当有符合保障食品安全要求的专用运输容器、作业人员和管理制度等，依法取得县级以上地方人民政府食品安全监督管理部门核发的准运证。</div>
+<div>　　“道路散装运输重点液态食品，发货方应当查验承运的道路运输经营者的准运证，核验运输容器是否符合保障食品安全的要求；收货方应当查验承运的道路运输经营者的准运证、运输记录，核验运输容器铅封是否完整；承运的道路运输经营者应当在运输容器显著位置喷涂食品专用标识，按照国家有关规定使用运输容器并及时清洗，严禁装运食品以外的其他物质。</div>
+<div>　　“任何单位和个人不得伪造、变造或者使用伪造、变造的重点液态食品道路散装运输记录、运输容器清洗凭证等单据。</div>
+<div>　　“重点液态食品道路散装运输的具体管理规定由国务院食品安全监督管理部门会同国务院有关部门制定。重点液态食品目录由国务院食品安全监督管理部门会同国务院有关部门制定、调整，报国务院批准后公布。”</div>
+<div>　　<font face="黑体">二</font>、在第八十一条、第八十二条、第一百二十四条中的“婴幼儿配方乳粉”后增加“婴幼儿配方液态乳”。</div>
+<div>　　<font face="黑体">三</font>、第一百三十二条增加三款，作为第二款至第四款：“违反本法规定，道路运输经营者未按要求进行重点液态食品散装运输的，依照前款规定给予处罚；情节严重的，除吊销许可证外，还应当处五万元以上五十万元以下罚款。</div>
+<div>　　“违反本法规定，未取得准运证从事重点液态食品道路散装运输的，由县级以上人民政府食品安全监督管理部门责令停止重点液态食品道路散装运输经营，没收违法所得，并处五万元以上五十万元以下罚款。</div>
+<div>　　“违反本法规定，伪造、变造或者使用伪造、变造的重点液态食品道路散装运输记录、运输容器清洗凭证等单据，或者未履行重点液态食品道路散装运输相关查验、核验义务的，由县级以上人民政府食品安全监督管理等部门按照各自职责分工责令改正，给予警告；拒不改正的，处一万元以上十万元以下罚款。”</div>
+<div>　　本决定自2025年12月1日起施行。</div>
+<div>　　《中华人民共和国食品安全法》根据本决定作相应修改，重新公布。</div></div>
+</div>
+
+<div class="editor">编       辑： 张峻铭</div>
+<div class="editor">责       编： 于浩</div>
+
+<div class="share"><a class="fl back" href="../../../../../../"><< 返回首页</a> 
+
+<div class="bdsharebuttonbox" style="width:280px;float:left;">
+<!--<a href="#" class="bds_more" data-cmd="more"></a>-->
+<a href="#" class="bds_qzone" data-cmd="qzone" title="分享到QQ空间"></a>
+<a href="#" class="bds_tsina" data-cmd="tsina" title="分享到新浪微博"></a>
+
+
+<a href="#" class="bds_weixin" data-cmd="weixin" title="分享到微信"></a>
+
+</div>
+
+<script type="text/javascript">
+<!--
+window._bd_share_config={"common":{"bdSnsKey":{},"bdText":"","bdMini":"2","bdMiniList":false,"bdPic":"","bdStyle":"0","bdSize":"24"},"share":{},"image":{"viewList":["qzone","tsina","weixin"],"viewText":"分享到：","viewSize":"16"}};with(document)0[(getElementsByTagName('head')[0]||body).appendChild(createElement('script')).src='http://bdimg.share.baidu.com/static/api/js/share.js?v=86835285.js?cdnversion='+~(-new Date()/36e5)];
+-->
+</script>
+
+ <span style="display:none;"><a class="fr download" href="http://npc.unisk.cn/download.html" target="_blank"> </a></span></div>
+
+<div class="about-article">
+
+<h4>相关文章</h4>
+<ul>
+
+</ul>
+
+</div>
+<script>
+var aboutArticle=document.getElementsByClassName("about-article")[0]; 
+var aboutLi=aboutArticle.getElementsByTagName("li").length;
+if(aboutLi==''){
+	aboutArticle.getElementsByTagName("h4")[0].style.display='none'
+}
+</script>
+
+<div class="printbox"><a href="javascript:window.print()"><img src="../../../../../../images/button_print1.gif" />  </a> <a href="javascript:window.close()"><img src="../../../../../../images/button_close1.gif" />  </a> <a href="#top1"><img src="../../../../../../images/button_back1.gif" border="0" /></a></div>
+</div>
+
+<div class="fr s_rw"><iframe id="rightty3" src="../../../../../../c191/c12481/c22235/" width="272" height="900" scrolling="no" marginheight="0" frameborder="0"></iframe></div>
+</div>
+</div>
+
+<div class="wrap02"><iframe id="headIfr" src="/npc/c191/c12481/c12453/index.shtml" width="100%" height="110" frameborder="0" scrolling="no" marginheight="0"></iframe></div>
+</body>
+</html>

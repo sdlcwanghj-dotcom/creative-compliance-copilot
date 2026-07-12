@@ -1,0 +1,14 @@
+[theme]
+base = "light"
+primaryColor = "#1858D5"
+backgroundColor = "#F4F7FB"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#17212B"
+font = "sans-serif"
+baseRadius = "0.5rem"
+buttonRadius = "0.375rem"
+showWidgetBorder = true
+
+[server]
+headless = true
+port = 8502
