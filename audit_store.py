@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "review.db"
+REVIEWABLE_STATUSES = {"待领取", "复核中"}
 
 
 def _connect():
@@ -232,11 +233,19 @@ def save_human_decision(
     with _database() as connection:
         cursor = connection.execute(
             """UPDATE tickets SET status=?, reviewer=?, final_decision=?, note=?,
-               report_id=?, updated_at=? WHERE ticket_id=?""",
-            (decision, reviewer, decision, note, report_id, created_at, ticket_id),
+               report_id=?, updated_at=? WHERE ticket_id=? AND status IN (?,?)""",
+            (
+                decision, reviewer, decision, note, report_id, created_at,
+                ticket_id, *sorted(REVIEWABLE_STATUSES),
+            ),
         )
         if cursor.rowcount != 1:
-            raise KeyError(f"Unknown ticket id: {ticket_id}")
+            row = connection.execute(
+                "SELECT status FROM tickets WHERE ticket_id=?", (ticket_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown ticket id: {ticket_id}")
+            raise ValueError(f"Ticket {ticket_id} is not reviewable: {row['status']}")
         connection.execute(
             """INSERT INTO review_logs(
                 ticket_id,reviewer,decision,note,original_copy,ai_decision,report_id,created_at

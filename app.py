@@ -12,6 +12,7 @@ from PIL import Image, ImageStat, UnidentifiedImageError
 from rapidocr import RapidOCR
 
 from audit_store import (
+    REVIEWABLE_STATUSES,
     create_ticket as persist_ticket,
     initialize_database,
     list_review_logs,
@@ -167,6 +168,21 @@ def init_state():
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+
+def clear_reviewer_session():
+    sensitive_keys = {
+        "current_user", "selected_ticket_id", "current_report",
+        "current_workflow", "ocr_text", "created_ticket",
+        "last_saved_decision", "workbench_workflows",
+    }
+    widget_prefixes = (
+        "human_review_note_", "human_confirm_state_", "task_library_selection",
+    )
+    for key in list(st.session_state):
+        if key in sensitive_keys or key.startswith(widget_prefixes):
+            del st.session_state[key]
+    init_state()
 
 
 def authenticate_demo_reviewer(account, password):
@@ -653,8 +669,7 @@ with st.sidebar:
         st.caption(f"{current_user['role']} · {current_user['team']}\n\n{current_user['auth_source']}")
         page = st.radio("主导航", ["审核工作台", "机器预审", "规则中心", "质检评测"], label_visibility="collapsed")
         if st.button("退出登录", icon=":material/logout:", width="stretch"):
-            st.session_state.current_user = None
-            st.session_state.selected_ticket_id = None
+            clear_reviewer_session()
             st.rerun()
         st.space("medium")
         st.caption("系统状态")
@@ -1051,9 +1066,16 @@ elif page == "审核工作台":
                 st.subheader("人工审核结论")
                 reviewer = st.session_state.current_user["name"]
                 st.caption(f"当前审核员：{reviewer} · {st.session_state.current_user['role']} · 已登录")
+                is_reviewable = selected_ticket.get("状态") in REVIEWABLE_STATUSES
+                if not is_reviewable:
+                    st.info(
+                        f"工单状态为“{selected_ticket.get('状态', '未知')}”，已结案记录仅供回放，不能再次裁决。",
+                        icon=":material/lock:",
+                    )
                 review_note = st.text_area(
                     "审核意见", value="", placeholder="填写判断依据、整改项或升级原因",
                     key=f"human_review_note_{chosen}",
+                    disabled=not is_reviewable,
                 )
                 confirmation_state = st.segmented_control(
                     "人工确认",
@@ -1062,8 +1084,9 @@ elif page == "审核工作台":
                     help="保存审核结论前，审核员必须确认已核验素材、政策依据和机器建议。",
                     key=f"human_confirm_state_{chosen}",
                     width="stretch",
+                    disabled=not is_reviewable,
                 )
-                confirmed = confirmation_state == "已确认"
+                confirmed = is_reviewable and confirmation_state == "已确认"
                 action_rows = [
                     [("通过", "已通过"), ("要求整改", "要求整改")],
                     [("驳回", "已驳回"), ("升级复核", "升级复核")],
