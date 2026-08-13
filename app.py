@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import altair as alt
 import streamlit as st
 from PIL import Image, ImageStat, UnidentifiedImageError
 from rapidocr import RapidOCR
@@ -937,9 +938,9 @@ elif page == "审核工作台":
         col.metric(label, value, help="审核 SLA：4 小时")
     st.space("small")
     selected_ticket = None
-    with st.container(border=True):
+    with st.expander("审核任务库", expanded=False, icon=":material/list_alt:"):
         with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"):
-            st.subheader("审核任务库")
+            st.subheader("任务筛选与选择")
             st.caption(f"共 {len(persisted_tickets)} 条模拟任务 · 数据更新时间 {now.strftime('%H:%M')}")
         industry_col, filter_col, priority_col, queue_col, search_col = st.columns([1, 1, 1, 1.4, 2])
         with industry_col:
@@ -996,7 +997,7 @@ elif page == "审核工作台":
     if selected_ticket is None and tickets:
         selected_ticket = next(
             (ticket for ticket in tickets if ticket["工单号"] == st.session_state.selected_ticket_id),
-            tickets[0],
+            next((ticket for ticket in tickets if ticket.get("状态") in REVIEWABLE_STATUSES), tickets[0]),
         )
         st.session_state.selected_ticket_id = selected_ticket["工单号"]
     if selected_ticket:
@@ -1233,8 +1234,19 @@ else:
     with chart_col:
         with st.container(border=True):
             st.subheader("当前版本实际指标")
-            chart_data = {label: round(value * 100, 1) for label, value in evaluation}
-            st.bar_chart(chart_data, x_label="评测指标", y_label="百分比")
+            chart_data = [
+                {"指标": label, "百分比": round(value * 100, 1)}
+                for label, value in evaluation
+            ]
+            chart = alt.Chart(alt.Data(values=chart_data)).mark_bar().encode(
+                y=alt.Y("指标:N", sort=None, title=None, axis=alt.Axis(labelLimit=230)),
+                x=alt.X("百分比:Q", title="百分比", scale=alt.Scale(domain=[0, 100])),
+                tooltip=[alt.Tooltip("指标:N", title="指标"), alt.Tooltip("百分比:Q", title="百分比", format=".1f")],
+            )
+            labels = chart.mark_text(align="left", dx=4, color="#27384a").encode(
+                text=alt.Text("百分比:Q", format=".1f")
+            )
+            st.altair_chart(chart + labels, width="stretch")
             st.caption("误报率和改写残留率越低越好，其余指标越高越好。未配置 LLM 时，仅评估确定性规则流程。")
     with matrix_col:
         with st.container(border=True):
