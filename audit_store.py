@@ -67,6 +67,10 @@ def initialize_database(seed_tickets=None):
             material_type TEXT NOT NULL DEFAULT '',
             review_queue TEXT NOT NULL DEFAULT '',
             sla_deadline TEXT NOT NULL DEFAULT '',
+            landing_page_text TEXT NOT NULL DEFAULT '',
+            qualification_verified INTEGER NOT NULL DEFAULT 0,
+            brand_terms TEXT NOT NULL DEFAULT '',
+            audience TEXT NOT NULL DEFAULT '',
             updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS review_logs (
@@ -88,6 +92,10 @@ def initialize_database(seed_tickets=None):
         _add_column_if_missing(connection, "tickets", "material_type", "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(connection, "tickets", "review_queue", "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(connection, "tickets", "sla_deadline", "TEXT NOT NULL DEFAULT ''")
+        _add_column_if_missing(connection, "tickets", "landing_page_text", "TEXT NOT NULL DEFAULT ''")
+        _add_column_if_missing(connection, "tickets", "qualification_verified", "INTEGER NOT NULL DEFAULT 0")
+        _add_column_if_missing(connection, "tickets", "brand_terms", "TEXT NOT NULL DEFAULT ''")
+        _add_column_if_missing(connection, "tickets", "audience", "TEXT NOT NULL DEFAULT ''")
         cases = json.loads((ROOT / "data" / "cases.json").read_text(encoding="utf-8"))
         case_payloads = [{"industry": item.get("industry", "护肤品"), **item} for item in cases]
         connection.executemany(
@@ -101,12 +109,14 @@ def initialize_database(seed_tickets=None):
                     ticket_id,advertiser,industry,product,copy,risk,priority,status,
                     ai_decision,matched_rules,submitted_at,suggested_copy,note,
                     reviewer,final_decision,report_id,placement,material_type,
-                    review_queue,sla_deadline,updated_at
+                    review_queue,sla_deadline,landing_page_text,
+                    qualification_verified,brand_terms,audience,updated_at
                 ) VALUES(
                     :ticket_id,:advertiser,:industry,:product,:copy,:risk,:priority,:status,
                     :ai_decision,:matched_rules,:submitted_at,:suggested_copy,:note,
                     :reviewer,:final_decision,:report_id,:placement,:material_type,
-                    :review_queue,:sla_deadline,:updated_at
+                    :review_queue,:sla_deadline,:landing_page_text,
+                    :qualification_verified,:brand_terms,:audience,:updated_at
                 )""",
                 payload,
             )
@@ -143,6 +153,10 @@ def _ticket_to_db(ticket, updated_at=None):
         "material_type": ticket.get("素材类型", "图文"),
         "review_queue": ticket.get("审核队列", "美妆普通队列"),
         "sla_deadline": ticket.get("SLA截止", ""),
+        "landing_page_text": ticket.get("落地页信息", ""),
+        "qualification_verified": int(bool(ticket.get("资质已核验", False))),
+        "brand_terms": ticket.get("品牌禁用词", ""),
+        "audience": ticket.get("目标人群", ""),
         "updated_at": updated_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
@@ -158,6 +172,9 @@ def _ticket_from_db(row):
         "最终结论": row["final_decision"], "报告号": row["report_id"],
         "广告位": row["placement"], "素材类型": row["material_type"],
         "审核队列": row["review_queue"], "SLA截止": row["sla_deadline"],
+        "落地页信息": row["landing_page_text"],
+        "资质已核验": bool(row["qualification_verified"]),
+        "品牌禁用词": row["brand_terms"], "目标人群": row["audience"],
         "更新时间": row["updated_at"],
     }
 
@@ -170,12 +187,14 @@ def create_ticket(ticket):
                 ticket_id,advertiser,industry,product,copy,risk,priority,status,
                 ai_decision,matched_rules,submitted_at,suggested_copy,note,
                 reviewer,final_decision,report_id,placement,material_type,
-                review_queue,sla_deadline,updated_at
+                review_queue,sla_deadline,landing_page_text,
+                qualification_verified,brand_terms,audience,updated_at
             ) VALUES(
                 :ticket_id,:advertiser,:industry,:product,:copy,:risk,:priority,:status,
                 :ai_decision,:matched_rules,:submitted_at,:suggested_copy,:note,
                 :reviewer,:final_decision,:report_id,:placement,:material_type,
-                :review_queue,:sla_deadline,:updated_at
+                :review_queue,:sla_deadline,:landing_page_text,
+                :qualification_verified,:brand_terms,:audience,:updated_at
             )""",
             payload,
         )

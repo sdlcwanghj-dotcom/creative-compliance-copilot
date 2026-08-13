@@ -356,6 +356,8 @@ def scan_material(copy, landing, industry, product, audience, uploaded, qualific
         "audience": audience,
         "copy": copy,
         "landing_page_text": landing,
+        "qualification_verified": bool(qualification),
+        "brand_terms": brand_terms,
         "findings": findings,
         "risk_score": score,
         "decision": decision,
@@ -427,7 +429,10 @@ def report_json(report, selected_copy):
     return payload.model_dump_json(indent=2)
 
 
-def run_review_agent(copy, landing, industry, product, audience, uploaded, qualification, brand_terms):
+def run_review_agent(
+    copy, landing, industry, product, audience, uploaded, qualification,
+    brand_terms, use_llm=False,
+):
     """Run deterministic controls and optionally add model-planned semantic review."""
     llm_agent = ReviewLLMAgent()
     llm_plan = None
@@ -437,7 +442,7 @@ def run_review_agent(copy, landing, industry, product, audience, uploaded, quali
         "product": product, "audience": audience, "has_image": uploaded is not None,
         "qualification_verified": qualification,
     }
-    if llm_agent.available:
+    if use_llm and llm_agent.available:
         try:
             llm_plan = llm_agent.plan_tools(context)
         except Exception as error:
@@ -445,7 +450,7 @@ def run_review_agent(copy, landing, industry, product, audience, uploaded, quali
     report = scan_material(copy, landing, industry, product, audience, uploaded, qualification, brand_terms)
     llm_findings = []
     if (
-        llm_agent.available and llm_error is None and llm_plan
+        use_llm and llm_agent.available and llm_error is None and llm_plan
         and "analyze_semantic_risk" in llm_plan["tools"]
     ):
         try:
@@ -482,7 +487,12 @@ def run_review_agent(copy, landing, industry, product, audience, uploaded, quali
     elif llm_error:
         trace.insert(0, {"tool": "llm_plan_tools", "status": "degraded", "summary": llm_error})
     else:
-        trace.insert(0, {"tool": "llm_plan_tools", "status": "skipped", "summary": "未配置模型，运行可复现的离线审核流程"})
+        summary = (
+            "未配置模型，运行可复现的离线审核流程"
+            if not llm_agent.available
+            else "未请求模型增强，运行快速确定性审核流程"
+        )
+        trace.insert(0, {"tool": "llm_plan_tools", "status": "skipped", "summary": summary})
     report["execution_mode"] = "LLM Agent 增强" if llm_plan and not llm_error else "离线确定性流程"
     return {"report": report, "rag_results": rag_results, "similar_cases": similar, "rewrites": rewrites, "trace": trace}
 
@@ -525,6 +535,10 @@ def create_ticket(report, copy_version, note):
         "素材类型": "单图+文案",
         "审核队列": f"{report['industry']}{'高风险' if report['risk_score'] >= 48 else '普通'}队列",
         "SLA截止": (datetime.now() + timedelta(hours=4)).strftime("%Y-%m-%d %H:%M"),
+        "落地页信息": report.get("landing_page_text", ""),
+        "资质已核验": report.get("qualification_verified", False),
+        "品牌禁用词": report.get("brand_terms", ""),
+        "目标人群": report.get("audience", ""),
     }
     return persist_ticket(ticket)
 
@@ -721,6 +735,12 @@ if page == "机器预审":
                 uploaded = st.file_uploader("图片素材（可选）", type=["png", "jpg", "jpeg"])
                 qualification = st.checkbox("已上传并核验相关资质或证明材料", value=False)
                 brand_terms = st.text_input("企业品牌禁用词", "闭眼入，黄脸婆，不买就亏")
+                use_llm = st.checkbox(
+                    "使用 LLM Agent 增强分析",
+                    value=False,
+                    disabled=not ReviewLLMAgent().available,
+                    help="仅在提交本次预审时调用模型；未勾选时运行快速确定性流程。",
+                )
                 run = st.form_submit_button("开始预审", icon=":material/play_arrow:", type="primary", width="stretch")
             ocr_text, ocr_confidence = "", 0.0
             image_error = None
@@ -754,7 +774,11 @@ if page == "机器预审":
 
     if run and image_error is None:
         combined_copy = f"{copy}\n图片文字：{ocr_text}" if ocr_text else copy
-        workflow_result = run_review_agent(combined_copy, landing, industry, product, audience, uploaded, qualification, brand_terms)
+        with st.spinner("正在运行预审流程…"):
+            workflow_result = run_review_agent(
+                combined_copy, landing, industry, product, audience, uploaded,
+                qualification, brand_terms, use_llm=use_llm,
+            )
         st.session_state.current_report = workflow_result["report"]
         st.session_state.current_workflow = workflow_result
         st.session_state.ocr_text = ocr_text
@@ -934,11 +958,31 @@ elif page == "审核工作台":
     if selected_ticket:
         chosen = selected_ticket["工单号"]
         st.caption(f"当前任务：{chosen} · {selected_ticket.get('广告主', '')} · {selected_ticket.get('商品', '')}")
-        selected_workflow = run_review_agent(
-            selected_ticket.get("文案", DEFAULT_COPY), DEFAULT_LANDING, selected_ticket.get("行业", "护肤品"),
-            selected_ticket.get("商品", "待审商品"), "大众人群", None, True,
-            "闭眼入，黄脸婆，不买就亏",
+        cached_workflows = st.session_state.setdefault("workbench_workflows", {})
+        run_llm_review = st.button(
+            "运行 LLM 增强分析",
+            icon=":material/hub:",
+            disabled=not ReviewLLMAgent().available,
+            help="仅在点击后调用模型；筛选、选择和人工确认不会触发模型请求。",
         )
+        review_inputs = {
+            "copy": selected_ticket.get("文案", DEFAULT_COPY),
+            "landing": selected_ticket.get("落地页信息", ""),
+            "industry": selected_ticket.get("行业", "护肤品"),
+            "product": selected_ticket.get("商品", "待审商品"),
+            "audience": selected_ticket.get("目标人群") or "大众人群",
+            "uploaded": None,
+            "qualification": selected_ticket.get("资质已核验", False),
+            "brand_terms": selected_ticket.get("品牌禁用词", ""),
+        }
+        if run_llm_review:
+            with st.spinner("正在运行 LLM 增强分析…"):
+                cached_workflows[chosen] = run_review_agent(
+                    **review_inputs, use_llm=True,
+                )
+        selected_workflow = cached_workflows.get(chosen)
+        if selected_workflow is None:
+            selected_workflow = run_review_agent(**review_inputs)
         selected_report = selected_workflow["report"]
         selected_findings = selected_report["findings"]
         rag_results = selected_workflow["rag_results"]

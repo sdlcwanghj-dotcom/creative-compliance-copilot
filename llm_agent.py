@@ -30,7 +30,11 @@ class ReviewLLMAgent:
     def __init__(self):
         self.api_key = os.getenv("LLM_API_KEY", "").strip()
         self.model = os.getenv("LLM_MODEL", "").strip()
-        self.base_url = os.getenv("LLM_API_BASE", "https://api.openai.com/v1").rstrip("/")
+        self.base_url = (
+            os.getenv("LLM_API_BASE")
+            or os.getenv("LLM_BASE_URL")
+            or "https://api.openai.com/v1"
+        ).rstrip("/")
         self.timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "30"))
 
     @property
