@@ -1244,7 +1244,7 @@ else:
                 y=alt.Y("指标:N", sort=None, title=None, axis=alt.Axis(labelLimit=230)),
                 x=alt.X("百分比:Q", title="百分比", scale=alt.Scale(domain=[0, 100])),
                 tooltip=[alt.Tooltip("指标:N", title="指标"), alt.Tooltip("百分比:Q", title="百分比", format=".1f")],
-            )
+            ).properties(height=alt.Step(28))
             labels = chart.mark_text(align="left", dx=4, color="#27384a").encode(
                 text=alt.Text("百分比:Q", format=".1f")
             )
