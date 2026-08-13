@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -210,7 +211,7 @@ def list_tickets():
     return [_ticket_from_db(row) for row in rows]
 
 
-def search_similar_cases(copy, industry=None, limit=3):
+def search_similar_cases(copy, industry=None, limit=3, min_score=0.12):
     with _database() as connection:
         if industry:
             rows = [dict(row) for row in connection.execute(
@@ -218,12 +219,13 @@ def search_similar_cases(copy, industry=None, limit=3):
             ).fetchall()]
         else:
             rows = [dict(row) for row in connection.execute("SELECT * FROM cases").fetchall()]
-    query_chars = set(copy)
+    query_chars = set(re.findall(r"[\w\u4e00-\u9fff]", copy.lower()))
     for row in rows:
-        case_chars = set(row["copy"])
+        case_chars = set(re.findall(r"[\w\u4e00-\u9fff]", row["copy"].lower()))
         union = query_chars | case_chars
         row["score"] = round(len(query_chars & case_chars) / max(1, len(union)), 3)
-    return sorted(rows, key=lambda row: row["score"], reverse=True)[:limit]
+    qualified = [row for row in rows if row["score"] >= min_score]
+    return sorted(qualified, key=lambda row: row["score"], reverse=True)[:limit]
 
 
 def save_human_decision(

@@ -384,22 +384,48 @@ def scan_material(copy, landing, industry, product, audience, uploaded, qualific
 
 def rewrite_variants(copy, product, audience, findings):
     del audience
-    clean = copy
-    direct_evidence = sorted({
-        str(finding["evidence"])
+    product_label = product or "该商品"
+    direct_findings = [
+        finding
         for finding in findings
         if finding["source"] in {"文案", "品牌规则", "语义分析", "LLM 语义分析"}
         and str(finding["evidence"]) in copy
-    }, key=len, reverse=True)
-    for evidence in direct_evidence:
-        clean = clean.replace(evidence, "")
-    clean = re.sub(r"(?:现在下单)?仅需\d+(?:元|块)", "[请补充真实价格、活动时间及适用范围]", clean)
-    clean = re.sub(r"[，、]{2,}", "，", clean)
-    clean = re.sub(r"[。]{2,}", "。", clean)
-    clean = re.sub(r"^[，。；：\s]+|[，；：\s]+$", "", clean).strip()
-    if not clean:
-        clean = "[原文风险表达已全部删除，请基于已核验的产品资料重新填写卖点]"
-    product_label = product or "该商品"
+    ]
+    direct_evidence = {str(finding["evidence"]) for finding in direct_findings}
+    price_evidence = {
+        str(finding["evidence"])
+        for finding in direct_findings
+        if "价格" in finding["category"] or "优惠" in finding["category"]
+    }
+    has_price_risk = any(
+        "价格" in finding["category"] or "优惠" in finding["category"]
+        for finding in findings
+    )
+    safe_sentences = []
+    retained_claim = False
+    for sentence in re.findall(r"[^。！？!?]+[。！？!?]?", copy):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        risky_evidence = [evidence for evidence in direct_evidence if evidence in sentence]
+        has_price_phrase = bool(re.search(r"(?:现在下单)?仅需\s*\d+(?:\.\d+)?(?:元|块)", sentence))
+        non_price_risk = [
+            evidence for evidence in risky_evidence
+            if evidence not in price_evidence
+        ]
+        if non_price_risk:
+            continue
+        if has_price_phrase or (has_price_risk and any(char.isdigit() for char in sentence)):
+            safe_sentences.append("活动价格、期限和适用条件请以商品页面公示为准。")
+            continue
+        safe_sentences.append(sentence)
+        retained_claim = True
+
+    if not retained_claim and findings:
+        safe_sentences.insert(0, f"{product_label}：[请填写经产品资料验证的卖点、适用条件和使用体验]。")
+    clean = "".join(dict.fromkeys(safe_sentences)).strip() or (
+        f"{product_label}：[请填写经产品资料验证的卖点、适用条件和使用体验]。"
+    )
     return {
         "最小修改版": clean,
         "事实占位版": f"{product_label}：[请填写经产品资料验证的成分、使用体验或适用条件]。",
@@ -859,11 +885,14 @@ if page == "机器预审":
                 if unsupported:
                     st.warning(f"未找到可直接引用的公开法规片段：{', '.join(unsupported)}。这些规则仅作为模拟平台/企业规则展示，需人工核验。")
             with tab4:
-                for case in report_similar_cases:
-                    with st.container(border=True):
-                        st.markdown(f"**{case['case_id']} · {case['decision']}**")
-                        st.write(case["copy"])
-                        st.caption(f"{case['category']} · 相似度 {case['score']:.0%} · {case['reason']}")
+                if not report_similar_cases:
+                    st.info("未找到达到相似度门槛的同品类历史案例。")
+                else:
+                    for case in report_similar_cases:
+                        with st.container(border=True):
+                            st.markdown(f"**{case['case_id']} · {case['decision']}**")
+                            st.write(case["copy"])
+                            st.caption(f"{case['category']} · 相似度 {case['score']:.0%} · {case['reason']}")
 
         st.space("small")
         rewrite_col, action_col = st.columns([1.15, .85], gap="medium")
@@ -1058,10 +1087,13 @@ elif page == "审核工作台":
                     st.warning(f"以下模拟规则尚未绑定公开法规片段：{', '.join(unsupported)}。请人工检索，不生成依据。")
 
                 st.subheader("相似历史案例")
-                for case in similar_cases:
-                    with st.expander(f"{case['case_id']} · {case['decision']}"):
-                        st.write(case["copy"])
-                        st.caption(f"{case['category']} · 相似度 {case['score']:.0%} · {case['reason']}")
+                if not similar_cases:
+                    st.info("未找到达到相似度门槛的同品类历史案例。")
+                else:
+                    for case in similar_cases:
+                        with st.expander(f"{case['case_id']} · {case['decision']}"):
+                            st.write(case["copy"])
+                            st.caption(f"{case['category']} · 相似度 {case['score']:.0%} · {case['reason']}")
 
                 st.subheader("人工审核结论")
                 reviewer = st.session_state.current_user["name"]
