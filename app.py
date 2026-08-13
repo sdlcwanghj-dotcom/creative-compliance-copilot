@@ -1151,13 +1151,15 @@ elif page == "规则中心":
     page_header("POLICY KNOWLEDGE / 03", "规则与政策中心", "检索多品类审核规则和公开法规原文，风险结论只引用当前适用版本。")
     with st.container(border=True):
         st.subheader("执行规则")
-        s1, s2, s3 = st.columns([2, 1, 1])
-        with s1:
-            query = st.text_input("检索规则", placeholder="输入规则名称、ID 或关键词")
-        with s2:
-            industry_filter = st.selectbox("适用品类", ["全部", "通用", *ALL_INDUSTRIES])
-        with s3:
-            level_filter = st.selectbox("风险等级", ["全部", "高", "中", "低"])
+        with st.form("rule_filters", border=False):
+            s1, s2, s3 = st.columns([2, 1, 1])
+            with s1:
+                query = st.text_input("检索规则", placeholder="输入规则名称、ID 或关键词")
+            with s2:
+                industry_filter = st.selectbox("适用品类", ["全部", "通用", *ALL_INDUSTRIES])
+            with s3:
+                level_filter = st.selectbox("风险等级", ["全部", "高", "中", "低"])
+            st.form_submit_button("应用筛选", icon=":material/search:")
     filtered = [p for p in POLICIES if (not query or query.lower() in (p["title"] + p["text"] + p["id"]).lower()) and (industry_filter == "全部" or p["industry"] == industry_filter) and (level_filter == "全部" or p["level"] == level_filter)]
     page_size = 10
     total_pages = max(1, (len(filtered) + page_size - 1) // page_size)
