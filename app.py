@@ -101,7 +101,7 @@ for rule in CATALOG_RULES:
             "action": rule["action"],
         })
 
-ALL_INDUSTRIES = ["护肤品", "食品饮料", "教育培训", "金融服务"]
+ALL_INDUSTRIES = ["护肤品", "食品饮料", "宠物用品", "电子产品", "日用品"]
 RULE_CHECKS.extend([
     {
         "pattern": rule["pattern"],
@@ -115,17 +115,17 @@ RULE_CHECKS.extend([
     if rule.get("pattern")
 ])
 
-# MVP only activates twenty cosmetics/general rules. The larger catalog remains
-# available in data/rules.json for later expansion.
-MVP_RULE_IDS = {
+# Activate the supported retail categories plus the shared review controls.
+CORE_RULE_IDS = {
     "COS-ABS-001", "COS-MED-002", "PLAT-CLEAR-003", "PLAT-LP-004",
-    "BRAND-TONE-005", "PLAT-ASSET-009", "GEN-001", "GEN-002",
-    "GEN-006", "GEN-007", "GEN-008", "GEN-012", "PLAT-007",
-    "PLAT-009", "PLAT-010", "COS-001", "COS-002", "COS-005",
-    "COS-006", "COS-007", "COS-008", "COS-009", "COS-010",
+    "BRAND-TONE-005", "PLAT-ASSET-009",
 }
-POLICIES = [policy for policy in POLICIES if policy["id"] in MVP_RULE_IDS]
-RULE_CHECKS = [check for check in RULE_CHECKS if check["policy"] in MVP_RULE_IDS]
+ACTIVE_RULE_IDS = CORE_RULE_IDS | {
+    rule["id"] for rule in CATALOG_RULES
+    if rule["industry"] == "通用" or rule["industry"] in ALL_INDUSTRIES
+}
+POLICIES = [policy for policy in POLICIES if policy["id"] in ACTIVE_RULE_IDS]
+RULE_CHECKS = [check for check in RULE_CHECKS if check["policy"] in ACTIVE_RULE_IDS]
 RULE_CHECKS.extend([
     {"pattern": r"敏感肌.*(?:适用|可用|放心)|孕妇.*(?:可用|使用)", "category": "特定人群适用宣称", "reason": "敏感肌、孕妇等特定人群适用范围需要产品安全评价、标签和使用条件支持。", "severity": "中", "policy": "COS-008", "industries": ["护肤品"]},
     {"pattern": r"皮肤科医生.*推荐|院线同款|三甲医院推荐|专家力荐", "category": "医疗权威或专家背书", "reason": "需要核验推荐主体身份、授权、适用范围及广告代言合规性。", "severity": "高", "policy": "COS-009", "industries": ["护肤品"]},
@@ -138,8 +138,8 @@ DEFAULT_COPY = "7天淡化所有斑点，让你重获婴儿般肌肤。现在下
 DEFAULT_LANDING = "透亮修护精华，日常补水保湿。活动价239元，实际效果因人而异。"
 
 DEMO_REVIEWERS = {
-    "reviewer.a": {"name": "审核员 A", "role": "广告审核员", "team": "美妆审核一组"},
-    "reviewer.b": {"name": "审核员 B", "role": "高级审核员", "team": "美妆审核二组"},
+    "reviewer.a": {"name": "审核员 A", "role": "广告审核员", "team": "综合审核一组"},
+    "reviewer.b": {"name": "审核员 B", "role": "高级审核员", "team": "综合审核二组"},
     "risk.ops": {"name": "风控专员 E", "role": "风控复核员", "team": "高风险复核组"},
 }
 
@@ -264,9 +264,10 @@ def classify_ad_industry(copy, product, selected_industry):
     text = f"{copy}{product}"
     term_groups = {
         "护肤品": ("肌肤", "精华", "护肤", "美白", "淡斑", "保湿", "防晒", "祛痘"),
-        "食品饮料": ("食品", "饮料", "零食", "蛋白", "饮品", "营养"),
-        "教育培训": ("课程", "培训", "考试", "上岸", "提分", "就业"),
-        "金融服务": ("理财", "收益", "投资", "基金", "保险", "年化"),
+        "食品饮料": ("食品", "饮料", "零食", "蛋白", "饮品", "营养", "燕麦", "果汁", "牛奶"),
+        "宠物用品": ("宠物", "猫粮", "狗粮", "犬粮", "猫砂", "磨牙", "喂食", "兽药"),
+        "电子产品": ("耳机", "手机", "充电", "续航", "防水", "蓝牙", "电池", "接口"),
+        "日用品": ("洗衣液", "清洁剂", "除菌", "洗洁精", "垃圾袋", "收纳", "家居", "日用"),
     }
     scores = {industry: sum(term in text for term in terms) for industry, terms in term_groups.items()}
     industry, score = max(scores.items(), key=lambda item: item[1])
@@ -466,7 +467,7 @@ def run_review_agent(copy, landing, industry, product, audience, uploaded, quali
         except Exception as error:
             llm_error = f"模型语义分析不可用，已保留确定性结果：{type(error).__name__}"
     rag_results = retrieve_applicable_policy(copy, report["findings"], limit=3)
-    similar = search_similar_cases(copy, limit=3)
+    similar = search_similar_cases(copy, industry=report["industry"], limit=3)
     rewrites = generate_compliant_rewrite(copy, product, audience, report["findings"])
     trace = [
         {"tool": "classify_ad_industry", "status": "completed", "summary": f"行业：{report['industry']}（{report['industry_source']}）"},
@@ -522,7 +523,7 @@ def create_ticket(report, copy_version, note):
         "报告号": report["report_id"],
         "广告位": "信息流·推荐页",
         "素材类型": "单图+文案",
-        "审核队列": "美妆高风险队列" if report["risk_score"] >= 48 else "美妆普通队列",
+        "审核队列": f"{report['industry']}{'高风险' if report['risk_score'] >= 48 else '普通'}队列",
         "SLA截止": (datetime.now() + timedelta(hours=4)).strftime("%Y-%m-%d %H:%M"),
     }
     return persist_ticket(ticket)
@@ -611,7 +612,7 @@ h1{font-size:2rem!important;margin:.1rem 0 .25rem!important}h2{font-size:1.08rem
 st.markdown("""<style>
 :root{--ink:#17212b;--muted:#5f6f7f;--line:#d9e0e8;--blue:#1858d5;--bg:#f4f7fb}
 html,body,.stApp{font-family:"Microsoft YaHei UI","PingFang SC","Segoe UI",sans-serif;letter-spacing:0}
-.stApp{background:var(--bg)!important;color:var(--ink)!important}.block-container{max-width:1320px;padding:1.4rem 2.2rem 3rem}
+.stApp{background:var(--bg)!important;color:var(--ink)!important}.block-container{max-width:1320px;padding:4.75rem 2.2rem 3rem}
 [data-testid="stSidebar"]{background:#fff!important;border-right:1px solid var(--line)!important}[data-testid="stSidebar"] *{color:#27384a!important}
 [data-testid="stSidebar"] [role="radiogroup"] label{padding:.42rem .55rem;border-radius:6px;margin:.12rem 0}
 [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){background:#eaf1ff!important;color:#174da8!important}
@@ -624,7 +625,7 @@ h1{font-size:1.85rem!important;line-height:1.25!important;margin:.15rem 0 .4rem!
 .copy-preview{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:16px;font-size:15px;line-height:1.9;color:#263646}.copy-preview mark{background:#ffe0e2;color:#9d2731;border-bottom:2px solid #d95560;padding:1px 3px}
 .recommend{background:#eef4ff;border:1px solid #cddcff;border-radius:6px;padding:16px;font-size:15px;line-height:1.8;color:#173d78;min-height:86px}.reason{border-left:3px solid #3572dc;padding:3px 0 3px 12px;color:#526579;font-size:13px;line-height:1.65}
 .stButton>button,.stDownloadButton>button{border-radius:6px;font-weight:600;min-height:40px}.stTabs [data-baseweb="tab"]{font-size:14px;font-weight:600}.stTabs [data-baseweb="tab-list"]{gap:24px}
-footer{visibility:hidden}@media(max-width:900px){.block-container{padding:1rem}.brand-sub{display:none}}
+footer{visibility:hidden}@media(max-width:900px){.block-container{padding:4.25rem 1rem 2rem}.brand-sub{display:none}}
 </style>""", unsafe_allow_html=True)
 
 
@@ -711,14 +712,14 @@ if page == "机器预审":
             st.subheader("1. 提交广告素材")
             st.caption("填写素材和落地页关键信息。系统会检查文案、资质、品牌规则及页面一致性。")
             with st.form("review_form", border=False):
-                industry = st.selectbox("自动识别行业", ["护肤品"], disabled=True, help="MVP 仅开放美妆/护肤品行业")
+                industry = st.selectbox("广告品类", ALL_INDUSTRIES, help="选择品类后仅运行通用规则和该品类的专项规则")
                 product = st.text_input("商品名称", "透亮修护精华")
                 copy = st.text_area("广告文案", DEFAULT_COPY, height=120)
                 landing = st.text_area("落地页关键信息", DEFAULT_LANDING, height=105, help="填写价格、商品名、核心卖点和限制条件")
                 audience = st.selectbox("目标人群", ["18-35 岁女性", "学生群体", "职场人群", "大众人群"])
                 objective = st.selectbox("投放目标", ["提升点击率", "促进转化", "品牌曝光", "线索收集"])
                 uploaded = st.file_uploader("图片素材（可选）", type=["png", "jpg", "jpeg"])
-                qualification = st.checkbox("已上传并核验行业资质", value=industry == "护肤品")
+                qualification = st.checkbox("已上传并核验相关资质或证明材料", value=False)
                 brand_terms = st.text_input("企业品牌禁用词", "闭眼入，黄脸婆，不买就亏")
                 run = st.form_submit_button("开始预审", icon=":material/play_arrow:", type="primary", width="stretch")
             ocr_text, ocr_confidence = "", 0.0
@@ -769,7 +770,7 @@ if page == "机器预审":
             st.session_state.current_report = report
         findings = report["findings"]
         variants = generate_compliant_rewrite(report["copy"], report["product"], report["audience"], findings)
-        report_similar_cases = search_similar_cases(report["copy"], limit=3)
+        report_similar_cases = search_similar_cases(report["copy"], industry=report["industry"], limit=3)
         report_rag_results = retrieve_applicable_policy(report["copy"], findings, limit=3)
         decision_color = "red" if report["decision"] == "人工审核" else ("orange" if report["decision"] == "修改后提交" else "green")
 
@@ -872,7 +873,9 @@ elif page == "审核工作台":
         with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"):
             st.subheader("审核任务库")
             st.caption(f"共 {len(persisted_tickets)} 条模拟任务 · 数据更新时间 {now.strftime('%H:%M')}")
-        filter_col, priority_col, queue_col, search_col = st.columns([1, 1, 1.4, 2])
+        industry_col, filter_col, priority_col, queue_col, search_col = st.columns([1, 1, 1, 1.4, 2])
+        with industry_col:
+            industry_filter = st.selectbox("品类筛选", ["全部", *ALL_INDUSTRIES])
         with filter_col:
             status_filter = st.selectbox("状态筛选", ["全部", "待领取", "复核中", "要求整改", "已驳回", "已通过", "升级复核"])
         with priority_col:
@@ -884,19 +887,20 @@ elif page == "审核工作台":
             ticket_search = st.text_input("搜索任务", placeholder="任务号、广告主、商品、文案或规则 ID")
         tickets = [
             ticket for ticket in persisted_tickets
-            if (status_filter == "全部" or ticket.get("状态") == status_filter)
+            if (industry_filter == "全部" or ticket.get("行业") == industry_filter)
+            and (status_filter == "全部" or ticket.get("状态") == status_filter)
             and (priority_filter == "全部" or ticket.get("优先级") == priority_filter)
             and (queue_filter == "全部" or ticket.get("审核队列") == queue_filter)
             and (
                 not ticket_search or ticket_search.lower() in " ".join([
                     ticket.get("工单号", ""), ticket.get("广告主", ""),
-                    ticket.get("商品", ""), ticket.get("文案", ""),
+                    ticket.get("行业", ""), ticket.get("商品", ""), ticket.get("文案", ""),
                     ticket.get("命中规则", ""),
                 ]).lower()
             )
         ]
         if tickets:
-            visible_columns = ["工单号", "优先级", "风险", "状态", "SLA状态", "广告主", "商品", "审核队列", "广告位", "提交时间"]
+            visible_columns = ["工单号", "行业", "优先级", "风险", "状态", "SLA状态", "广告主", "商品", "审核队列", "广告位", "提交时间"]
             task_rows = []
             for ticket in tickets:
                 row = {key: ticket.get(key, "") for key in visible_columns}
@@ -1044,14 +1048,14 @@ elif page == "审核工作台":
 
 
 elif page == "规则中心":
-    page_header("POLICY KNOWLEDGE / 03", "规则与政策中心", "检索美妆审核规则和公开法规原文，风险结论只引用当前适用版本。")
+    page_header("POLICY KNOWLEDGE / 03", "规则与政策中心", "检索多品类审核规则和公开法规原文，风险结论只引用当前适用版本。")
     with st.container(border=True):
         st.subheader("执行规则")
         s1, s2, s3 = st.columns([2, 1, 1])
         with s1:
             query = st.text_input("检索规则", placeholder="输入规则名称、ID 或关键词")
         with s2:
-            industry_filter = st.selectbox("适用行业", ["全部", "通用", "护肤品"])
+            industry_filter = st.selectbox("适用品类", ["全部", "通用", *ALL_INDUSTRIES])
         with s3:
             level_filter = st.selectbox("风险等级", ["全部", "高", "中", "低"])
     filtered = [p for p in POLICIES if (not query or query.lower() in (p["title"] + p["text"] + p["id"]).lower()) and (industry_filter == "全部" or p["industry"] == industry_filter) and (level_filter == "全部" or p["level"] == level_filter)]
@@ -1073,7 +1077,7 @@ elif page == "规则中心":
                 st.markdown(f"**建议动作：** {policy['action']}")
 
     with st.expander("检索法规原文", icon=":material/search:", expanded=False):
-        legal_query = st.text_input("搜索条款关键词", placeholder="例如：绝对化用语、疾病预防、功效宣称、教育培训")
+        legal_query = st.text_input("搜索条款关键词", placeholder="例如：绝对化用语、食品功效、宠物饲料、产品安全")
         if legal_query:
             excerpt_hits = search_policy_query(legal_query, limit=8)
             q = legal_query.lower()
@@ -1111,7 +1115,7 @@ elif page == "规则中心":
         r1, r2 = st.columns(2)
         with r1:
             st.text_input("规则名称", "禁止制造容貌焦虑")
-            st.selectbox("适用范围", ["全部品牌", "护肤品牌 A", "食品品牌 B"])
+            st.selectbox("适用范围", ["全部品牌", "护肤品牌 A", "食品品牌 B", "宠物品牌 C", "数码品牌 D", "日用品牌 E"])
         with r2:
             st.text_area("规则内容", "不得使用贬低用户外貌、年龄或身材的表达。", height=100)
         st.button("保存为草稿", disabled=True, help="Demo 中仅展示权限边界，规则发布需要管理员审批")
@@ -1136,7 +1140,7 @@ else:
     with matrix_col:
         with st.container(border=True):
             st.subheader("评测口径")
-            st.write("评测集为 24 条自建美妆案例，标签包含是否风险、风险片段和是否升级人工。")
+            st.write("评测集为 44 条多品类自建案例，标签包含是否风险、风险片段和是否升级人工。")
             st.write("公开法规引用覆盖率只统计配置了明确 evidence chunk 的命中，不把模拟规则当作法律依据。")
             st.write("这些结果是本地运行结果，不代表线上生产效果或任何真实平台数据。")
     st.space("small")

@@ -40,6 +40,7 @@ def initialize_database(seed_tickets=None):
         CREATE TABLE IF NOT EXISTS cases (
             case_id TEXT PRIMARY KEY,
             copy TEXT NOT NULL,
+            industry TEXT NOT NULL DEFAULT '护肤品',
             category TEXT NOT NULL,
             decision TEXT NOT NULL,
             risk TEXT NOT NULL,
@@ -82,14 +83,16 @@ def initialize_database(seed_tickets=None):
         );
         """)
         _add_column_if_missing(connection, "review_logs", "report_id", "TEXT NOT NULL DEFAULT ''")
+        _add_column_if_missing(connection, "cases", "industry", "TEXT NOT NULL DEFAULT '护肤品'")
         _add_column_if_missing(connection, "tickets", "placement", "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(connection, "tickets", "material_type", "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(connection, "tickets", "review_queue", "TEXT NOT NULL DEFAULT ''")
         _add_column_if_missing(connection, "tickets", "sla_deadline", "TEXT NOT NULL DEFAULT ''")
         cases = json.loads((ROOT / "data" / "cases.json").read_text(encoding="utf-8"))
+        case_payloads = [{"industry": item.get("industry", "护肤品"), **item} for item in cases]
         connection.executemany(
-            "INSERT OR REPLACE INTO cases(case_id,copy,category,decision,risk,reason) VALUES(:case_id,:copy,:category,:decision,:risk,:reason)",
-            cases,
+            "INSERT OR REPLACE INTO cases(case_id,copy,industry,category,decision,risk,reason) VALUES(:case_id,:copy,:industry,:category,:decision,:risk,:reason)",
+            case_payloads,
         )
         for ticket in seed_tickets or []:
             payload = _ticket_to_db(ticket, now)
@@ -187,9 +190,14 @@ def list_tickets():
     return [_ticket_from_db(row) for row in rows]
 
 
-def search_similar_cases(copy, limit=3):
+def search_similar_cases(copy, industry=None, limit=3):
     with _database() as connection:
-        rows = [dict(row) for row in connection.execute("SELECT * FROM cases").fetchall()]
+        if industry:
+            rows = [dict(row) for row in connection.execute(
+                "SELECT * FROM cases WHERE industry=?", (industry,)
+            ).fetchall()]
+        else:
+            rows = [dict(row) for row in connection.execute("SELECT * FROM cases").fetchall()]
     query_chars = set(copy)
     for row in rows:
         case_chars = set(row["copy"])
