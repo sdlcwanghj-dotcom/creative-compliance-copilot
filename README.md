@@ -56,7 +56,7 @@
 ```powershell
 pip install -r requirements.txt
 python scripts\build_knowledge_base.py
-streamlit run app.py --server.port 8502
+streamlit run app.py --server.address 127.0.0.1 --server.port 8502
 ```
 
 打开 `http://127.0.0.1:8502`。
@@ -85,6 +85,8 @@ LLM_TIMEOUT_SECONDS=30
 
 保存后重启 Streamlit。`.env` 已加入 `.gitignore`，不会被 Git 提交；`.env.example` 是不含真实密钥的配置模板。系统环境变量优先于 `.env`。
 
+工作台和机器预审默认使用离线确定性流程；只有勾选“使用 LLM Agent 增强分析”或在工作台点击“运行 LLM 增强分析”时，才会发起模型请求。历史兼容配置也支持 `LLM_BASE_URL`，新配置优先使用 `LLM_API_BASE`。
+
 也可以只为当前 PowerShell 会话临时配置：
 
 ```powershell
@@ -109,6 +111,14 @@ streamlit run app.py --server.port 8502
 ## 评测指标
 
 当前页面逐条运行 44 条多品类自建样本。当前离线规则版本的实测结果为：违规召回率 100%、合规素材误报率 0%、风险片段定位率 96.1%、公开法规引用覆盖率 77.3%、改写残留规则率 0%、人工升级判断准确率 86.4%、结构化字段完整率 100%。这些是本地固定样本结果，不代表线上生产效果；修改规则后页面会重新计算。
+
+## 回归测试
+
+代码修改后可运行以下命令检查工单状态保护、会话清理、相似案例门槛和默认改写：
+
+```powershell
+python -m unittest discover -s tests -v
+```
 
 ## 免责声明
 
