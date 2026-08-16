@@ -7,11 +7,13 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import altair as alt
 import streamlit as st
 from PIL import Image, ImageStat, UnidentifiedImageError
 from rapidocr import RapidOCR
 
 from audit_store import (
+    REVIEWABLE_STATUSES,
     create_ticket as persist_ticket,
     initialize_database,
     list_review_logs,
@@ -101,7 +103,7 @@ for rule in CATALOG_RULES:
             "action": rule["action"],
         })
 
-ALL_INDUSTRIES = ["护肤品", "食品饮料", "教育培训", "金融服务"]
+ALL_INDUSTRIES = ["护肤品", "食品饮料", "宠物用品", "电子产品", "日用品"]
 RULE_CHECKS.extend([
     {
         "pattern": rule["pattern"],
@@ -115,17 +117,17 @@ RULE_CHECKS.extend([
     if rule.get("pattern")
 ])
 
-# MVP only activates twenty cosmetics/general rules. The larger catalog remains
-# available in data/rules.json for later expansion.
-MVP_RULE_IDS = {
+# Activate the supported retail categories plus the shared review controls.
+CORE_RULE_IDS = {
     "COS-ABS-001", "COS-MED-002", "PLAT-CLEAR-003", "PLAT-LP-004",
-    "BRAND-TONE-005", "PLAT-ASSET-009", "GEN-001", "GEN-002",
-    "GEN-006", "GEN-007", "GEN-008", "GEN-012", "PLAT-007",
-    "PLAT-009", "PLAT-010", "COS-001", "COS-002", "COS-005",
-    "COS-006", "COS-007", "COS-008", "COS-009", "COS-010",
+    "BRAND-TONE-005", "PLAT-ASSET-009",
 }
-POLICIES = [policy for policy in POLICIES if policy["id"] in MVP_RULE_IDS]
-RULE_CHECKS = [check for check in RULE_CHECKS if check["policy"] in MVP_RULE_IDS]
+ACTIVE_RULE_IDS = CORE_RULE_IDS | {
+    rule["id"] for rule in CATALOG_RULES
+    if rule["industry"] == "通用" or rule["industry"] in ALL_INDUSTRIES
+}
+POLICIES = [policy for policy in POLICIES if policy["id"] in ACTIVE_RULE_IDS]
+RULE_CHECKS = [check for check in RULE_CHECKS if check["policy"] in ACTIVE_RULE_IDS]
 RULE_CHECKS.extend([
     {"pattern": r"敏感肌.*(?:适用|可用|放心)|孕妇.*(?:可用|使用)", "category": "特定人群适用宣称", "reason": "敏感肌、孕妇等特定人群适用范围需要产品安全评价、标签和使用条件支持。", "severity": "中", "policy": "COS-008", "industries": ["护肤品"]},
     {"pattern": r"皮肤科医生.*推荐|院线同款|三甲医院推荐|专家力荐", "category": "医疗权威或专家背书", "reason": "需要核验推荐主体身份、授权、适用范围及广告代言合规性。", "severity": "高", "policy": "COS-009", "industries": ["护肤品"]},
@@ -138,8 +140,8 @@ DEFAULT_COPY = "7天淡化所有斑点，让你重获婴儿般肌肤。现在下
 DEFAULT_LANDING = "透亮修护精华，日常补水保湿。活动价239元，实际效果因人而异。"
 
 DEMO_REVIEWERS = {
-    "reviewer.a": {"name": "审核员 A", "role": "广告审核员", "team": "美妆审核一组"},
-    "reviewer.b": {"name": "审核员 B", "role": "高级审核员", "team": "美妆审核二组"},
+    "reviewer.a": {"name": "审核员 A", "role": "广告审核员", "team": "综合审核一组"},
+    "reviewer.b": {"name": "审核员 B", "role": "高级审核员", "team": "综合审核二组"},
     "risk.ops": {"name": "风控专员 E", "role": "风控复核员", "team": "高风险复核组"},
 }
 
@@ -167,6 +169,21 @@ def init_state():
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+
+def clear_reviewer_session():
+    sensitive_keys = {
+        "current_user", "selected_ticket_id", "current_report",
+        "current_workflow", "ocr_text", "created_ticket",
+        "last_saved_decision", "workbench_workflows",
+    }
+    widget_prefixes = (
+        "human_review_note_", "human_confirm_state_", "task_library_selection",
+    )
+    for key in list(st.session_state):
+        if key in sensitive_keys or key.startswith(widget_prefixes):
+            del st.session_state[key]
+    init_state()
 
 
 def authenticate_demo_reviewer(account, password):
@@ -264,9 +281,10 @@ def classify_ad_industry(copy, product, selected_industry):
     text = f"{copy}{product}"
     term_groups = {
         "护肤品": ("肌肤", "精华", "护肤", "美白", "淡斑", "保湿", "防晒", "祛痘"),
-        "食品饮料": ("食品", "饮料", "零食", "蛋白", "饮品", "营养"),
-        "教育培训": ("课程", "培训", "考试", "上岸", "提分", "就业"),
-        "金融服务": ("理财", "收益", "投资", "基金", "保险", "年化"),
+        "食品饮料": ("食品", "饮料", "零食", "蛋白", "饮品", "营养", "燕麦", "果汁", "牛奶"),
+        "宠物用品": ("宠物", "猫粮", "狗粮", "犬粮", "猫砂", "磨牙", "喂食", "兽药"),
+        "电子产品": ("耳机", "手机", "充电", "续航", "防水", "蓝牙", "电池", "接口"),
+        "日用品": ("洗衣液", "清洁剂", "除菌", "洗洁精", "垃圾袋", "收纳", "家居", "日用"),
     }
     scores = {industry: sum(term in text for term in terms) for industry, terms in term_groups.items()}
     industry, score = max(scores.items(), key=lambda item: item[1])
@@ -355,6 +373,8 @@ def scan_material(copy, landing, industry, product, audience, uploaded, qualific
         "audience": audience,
         "copy": copy,
         "landing_page_text": landing,
+        "qualification_verified": bool(qualification),
+        "brand_terms": brand_terms,
         "findings": findings,
         "risk_score": score,
         "decision": decision,
@@ -365,22 +385,48 @@ def scan_material(copy, landing, industry, product, audience, uploaded, qualific
 
 def rewrite_variants(copy, product, audience, findings):
     del audience
-    clean = copy
-    direct_evidence = sorted({
-        str(finding["evidence"])
+    product_label = product or "该商品"
+    direct_findings = [
+        finding
         for finding in findings
         if finding["source"] in {"文案", "品牌规则", "语义分析", "LLM 语义分析"}
         and str(finding["evidence"]) in copy
-    }, key=len, reverse=True)
-    for evidence in direct_evidence:
-        clean = clean.replace(evidence, "")
-    clean = re.sub(r"(?:现在下单)?仅需\d+(?:元|块)", "[请补充真实价格、活动时间及适用范围]", clean)
-    clean = re.sub(r"[，、]{2,}", "，", clean)
-    clean = re.sub(r"[。]{2,}", "。", clean)
-    clean = re.sub(r"^[，。；：\s]+|[，；：\s]+$", "", clean).strip()
-    if not clean:
-        clean = "[原文风险表达已全部删除，请基于已核验的产品资料重新填写卖点]"
-    product_label = product or "该商品"
+    ]
+    direct_evidence = {str(finding["evidence"]) for finding in direct_findings}
+    price_evidence = {
+        str(finding["evidence"])
+        for finding in direct_findings
+        if "价格" in finding["category"] or "优惠" in finding["category"]
+    }
+    has_price_risk = any(
+        "价格" in finding["category"] or "优惠" in finding["category"]
+        for finding in findings
+    )
+    safe_sentences = []
+    retained_claim = False
+    for sentence in re.findall(r"[^。！？!?]+[。！？!?]?", copy):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        risky_evidence = [evidence for evidence in direct_evidence if evidence in sentence]
+        has_price_phrase = bool(re.search(r"(?:现在下单)?仅需\s*\d+(?:\.\d+)?(?:元|块)", sentence))
+        non_price_risk = [
+            evidence for evidence in risky_evidence
+            if evidence not in price_evidence
+        ]
+        if non_price_risk:
+            continue
+        if has_price_phrase or (has_price_risk and any(char.isdigit() for char in sentence)):
+            safe_sentences.append("活动价格、期限和适用条件请以商品页面公示为准。")
+            continue
+        safe_sentences.append(sentence)
+        retained_claim = True
+
+    if not retained_claim and findings:
+        safe_sentences.insert(0, f"{product_label}：[请填写经产品资料验证的卖点、适用条件和使用体验]。")
+    clean = "".join(dict.fromkeys(safe_sentences)).strip() or (
+        f"{product_label}：[请填写经产品资料验证的卖点、适用条件和使用体验]。"
+    )
     return {
         "最小修改版": clean,
         "事实占位版": f"{product_label}：[请填写经产品资料验证的成分、使用体验或适用条件]。",
@@ -426,7 +472,10 @@ def report_json(report, selected_copy):
     return payload.model_dump_json(indent=2)
 
 
-def run_review_agent(copy, landing, industry, product, audience, uploaded, qualification, brand_terms):
+def run_review_agent(
+    copy, landing, industry, product, audience, uploaded, qualification,
+    brand_terms, use_llm=False,
+):
     """Run deterministic controls and optionally add model-planned semantic review."""
     llm_agent = ReviewLLMAgent()
     llm_plan = None
@@ -436,7 +485,7 @@ def run_review_agent(copy, landing, industry, product, audience, uploaded, quali
         "product": product, "audience": audience, "has_image": uploaded is not None,
         "qualification_verified": qualification,
     }
-    if llm_agent.available:
+    if use_llm and llm_agent.available:
         try:
             llm_plan = llm_agent.plan_tools(context)
         except Exception as error:
@@ -444,7 +493,7 @@ def run_review_agent(copy, landing, industry, product, audience, uploaded, quali
     report = scan_material(copy, landing, industry, product, audience, uploaded, qualification, brand_terms)
     llm_findings = []
     if (
-        llm_agent.available and llm_error is None and llm_plan
+        use_llm and llm_agent.available and llm_error is None and llm_plan
         and "analyze_semantic_risk" in llm_plan["tools"]
     ):
         try:
@@ -466,7 +515,7 @@ def run_review_agent(copy, landing, industry, product, audience, uploaded, quali
         except Exception as error:
             llm_error = f"模型语义分析不可用，已保留确定性结果：{type(error).__name__}"
     rag_results = retrieve_applicable_policy(copy, report["findings"], limit=3)
-    similar = search_similar_cases(copy, limit=3)
+    similar = search_similar_cases(copy, industry=report["industry"], limit=3)
     rewrites = generate_compliant_rewrite(copy, product, audience, report["findings"])
     trace = [
         {"tool": "classify_ad_industry", "status": "completed", "summary": f"行业：{report['industry']}（{report['industry_source']}）"},
@@ -481,7 +530,12 @@ def run_review_agent(copy, landing, industry, product, audience, uploaded, quali
     elif llm_error:
         trace.insert(0, {"tool": "llm_plan_tools", "status": "degraded", "summary": llm_error})
     else:
-        trace.insert(0, {"tool": "llm_plan_tools", "status": "skipped", "summary": "未配置模型，运行可复现的离线审核流程"})
+        summary = (
+            "未配置模型，运行可复现的离线审核流程"
+            if not llm_agent.available
+            else "未请求模型增强，运行快速确定性审核流程"
+        )
+        trace.insert(0, {"tool": "llm_plan_tools", "status": "skipped", "summary": summary})
     report["execution_mode"] = "LLM Agent 增强" if llm_plan and not llm_error else "离线确定性流程"
     return {"report": report, "rag_results": rag_results, "similar_cases": similar, "rewrites": rewrites, "trace": trace}
 
@@ -522,8 +576,12 @@ def create_ticket(report, copy_version, note):
         "报告号": report["report_id"],
         "广告位": "信息流·推荐页",
         "素材类型": "单图+文案",
-        "审核队列": "美妆高风险队列" if report["risk_score"] >= 48 else "美妆普通队列",
+        "审核队列": f"{report['industry']}{'高风险' if report['risk_score'] >= 48 else '普通'}队列",
         "SLA截止": (datetime.now() + timedelta(hours=4)).strftime("%Y-%m-%d %H:%M"),
+        "落地页信息": report.get("landing_page_text", ""),
+        "资质已核验": report.get("qualification_verified", False),
+        "品牌禁用词": report.get("brand_terms", ""),
+        "目标人群": report.get("audience", ""),
     }
     return persist_ticket(ticket)
 
@@ -611,7 +669,7 @@ h1{font-size:2rem!important;margin:.1rem 0 .25rem!important}h2{font-size:1.08rem
 st.markdown("""<style>
 :root{--ink:#17212b;--muted:#5f6f7f;--line:#d9e0e8;--blue:#1858d5;--bg:#f4f7fb}
 html,body,.stApp{font-family:"Microsoft YaHei UI","PingFang SC","Segoe UI",sans-serif;letter-spacing:0}
-.stApp{background:var(--bg)!important;color:var(--ink)!important}.block-container{max-width:1320px;padding:1.4rem 2.2rem 3rem}
+.stApp{background:var(--bg)!important;color:var(--ink)!important}.block-container{max-width:1320px;padding:4.75rem 2.2rem 3rem}
 [data-testid="stSidebar"]{background:#fff!important;border-right:1px solid var(--line)!important}[data-testid="stSidebar"] *{color:#27384a!important}
 [data-testid="stSidebar"] [role="radiogroup"] label{padding:.42rem .55rem;border-radius:6px;margin:.12rem 0}
 [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){background:#eaf1ff!important;color:#174da8!important}
@@ -624,7 +682,7 @@ h1{font-size:1.85rem!important;line-height:1.25!important;margin:.15rem 0 .4rem!
 .copy-preview{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:16px;font-size:15px;line-height:1.9;color:#263646}.copy-preview mark{background:#ffe0e2;color:#9d2731;border-bottom:2px solid #d95560;padding:1px 3px}
 .recommend{background:#eef4ff;border:1px solid #cddcff;border-radius:6px;padding:16px;font-size:15px;line-height:1.8;color:#173d78;min-height:86px}.reason{border-left:3px solid #3572dc;padding:3px 0 3px 12px;color:#526579;font-size:13px;line-height:1.65}
 .stButton>button,.stDownloadButton>button{border-radius:6px;font-weight:600;min-height:40px}.stTabs [data-baseweb="tab"]{font-size:14px;font-weight:600}.stTabs [data-baseweb="tab-list"]{gap:24px}
-footer{visibility:hidden}@media(max-width:900px){.block-container{padding:1rem}.brand-sub{display:none}}
+footer{visibility:hidden}@media(max-width:900px){.block-container{padding:4.25rem 1rem 2rem}.brand-sub{display:none}}
 </style>""", unsafe_allow_html=True)
 
 
@@ -638,8 +696,7 @@ with st.sidebar:
         st.caption(f"{current_user['role']} · {current_user['team']}\n\n{current_user['auth_source']}")
         page = st.radio("主导航", ["审核工作台", "机器预审", "规则中心", "质检评测"], label_visibility="collapsed")
         if st.button("退出登录", icon=":material/logout:", width="stretch"):
-            st.session_state.current_user = None
-            st.session_state.selected_ticket_id = None
+            clear_reviewer_session()
             st.rerun()
         st.space("medium")
         st.caption("系统状态")
@@ -711,15 +768,21 @@ if page == "机器预审":
             st.subheader("1. 提交广告素材")
             st.caption("填写素材和落地页关键信息。系统会检查文案、资质、品牌规则及页面一致性。")
             with st.form("review_form", border=False):
-                industry = st.selectbox("自动识别行业", ["护肤品"], disabled=True, help="MVP 仅开放美妆/护肤品行业")
+                industry = st.selectbox("广告品类", ALL_INDUSTRIES, help="选择品类后仅运行通用规则和该品类的专项规则")
                 product = st.text_input("商品名称", "透亮修护精华")
                 copy = st.text_area("广告文案", DEFAULT_COPY, height=120)
                 landing = st.text_area("落地页关键信息", DEFAULT_LANDING, height=105, help="填写价格、商品名、核心卖点和限制条件")
                 audience = st.selectbox("目标人群", ["18-35 岁女性", "学生群体", "职场人群", "大众人群"])
                 objective = st.selectbox("投放目标", ["提升点击率", "促进转化", "品牌曝光", "线索收集"])
                 uploaded = st.file_uploader("图片素材（可选）", type=["png", "jpg", "jpeg"])
-                qualification = st.checkbox("已上传并核验行业资质", value=industry == "护肤品")
+                qualification = st.checkbox("已上传并核验相关资质或证明材料", value=False)
                 brand_terms = st.text_input("企业品牌禁用词", "闭眼入，黄脸婆，不买就亏")
+                use_llm = st.checkbox(
+                    "使用 LLM Agent 增强分析",
+                    value=False,
+                    disabled=not ReviewLLMAgent().available,
+                    help="仅在提交本次预审时调用模型；未勾选时运行快速确定性流程。",
+                )
                 run = st.form_submit_button("开始预审", icon=":material/play_arrow:", type="primary", width="stretch")
             ocr_text, ocr_confidence = "", 0.0
             image_error = None
@@ -753,7 +816,11 @@ if page == "机器预审":
 
     if run and image_error is None:
         combined_copy = f"{copy}\n图片文字：{ocr_text}" if ocr_text else copy
-        workflow_result = run_review_agent(combined_copy, landing, industry, product, audience, uploaded, qualification, brand_terms)
+        with st.spinner("正在运行预审流程…"):
+            workflow_result = run_review_agent(
+                combined_copy, landing, industry, product, audience, uploaded,
+                qualification, brand_terms, use_llm=use_llm,
+            )
         st.session_state.current_report = workflow_result["report"]
         st.session_state.current_workflow = workflow_result
         st.session_state.ocr_text = ocr_text
@@ -769,7 +836,7 @@ if page == "机器预审":
             st.session_state.current_report = report
         findings = report["findings"]
         variants = generate_compliant_rewrite(report["copy"], report["product"], report["audience"], findings)
-        report_similar_cases = search_similar_cases(report["copy"], limit=3)
+        report_similar_cases = search_similar_cases(report["copy"], industry=report["industry"], limit=3)
         report_rag_results = retrieve_applicable_policy(report["copy"], findings, limit=3)
         decision_color = "red" if report["decision"] == "人工审核" else ("orange" if report["decision"] == "修改后提交" else "green")
 
@@ -819,11 +886,14 @@ if page == "机器预审":
                 if unsupported:
                     st.warning(f"未找到可直接引用的公开法规片段：{', '.join(unsupported)}。这些规则仅作为模拟平台/企业规则展示，需人工核验。")
             with tab4:
-                for case in report_similar_cases:
-                    with st.container(border=True):
-                        st.markdown(f"**{case['case_id']} · {case['decision']}**")
-                        st.write(case["copy"])
-                        st.caption(f"{case['category']} · 相似度 {case['score']:.0%} · {case['reason']}")
+                if not report_similar_cases:
+                    st.info("未找到达到相似度门槛的同品类历史案例。")
+                else:
+                    for case in report_similar_cases:
+                        with st.container(border=True):
+                            st.markdown(f"**{case['case_id']} · {case['decision']}**")
+                            st.write(case["copy"])
+                            st.caption(f"{case['category']} · 相似度 {case['score']:.0%} · {case['reason']}")
 
         st.space("small")
         rewrite_col, action_col = st.columns([1.15, .85], gap="medium")
@@ -868,11 +938,13 @@ elif page == "审核工作台":
         col.metric(label, value, help="审核 SLA：4 小时")
     st.space("small")
     selected_ticket = None
-    with st.container(border=True):
+    with st.expander("审核任务库", expanded=False, icon=":material/list_alt:"):
         with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"):
-            st.subheader("审核任务库")
+            st.subheader("任务筛选与选择")
             st.caption(f"共 {len(persisted_tickets)} 条模拟任务 · 数据更新时间 {now.strftime('%H:%M')}")
-        filter_col, priority_col, queue_col, search_col = st.columns([1, 1, 1.4, 2])
+        industry_col, filter_col, priority_col, queue_col, search_col = st.columns([1, 1, 1, 1.4, 2])
+        with industry_col:
+            industry_filter = st.selectbox("品类筛选", ["全部", *ALL_INDUSTRIES])
         with filter_col:
             status_filter = st.selectbox("状态筛选", ["全部", "待领取", "复核中", "要求整改", "已驳回", "已通过", "升级复核"])
         with priority_col:
@@ -884,19 +956,20 @@ elif page == "审核工作台":
             ticket_search = st.text_input("搜索任务", placeholder="任务号、广告主、商品、文案或规则 ID")
         tickets = [
             ticket for ticket in persisted_tickets
-            if (status_filter == "全部" or ticket.get("状态") == status_filter)
+            if (industry_filter == "全部" or ticket.get("行业") == industry_filter)
+            and (status_filter == "全部" or ticket.get("状态") == status_filter)
             and (priority_filter == "全部" or ticket.get("优先级") == priority_filter)
             and (queue_filter == "全部" or ticket.get("审核队列") == queue_filter)
             and (
                 not ticket_search or ticket_search.lower() in " ".join([
                     ticket.get("工单号", ""), ticket.get("广告主", ""),
-                    ticket.get("商品", ""), ticket.get("文案", ""),
+                    ticket.get("行业", ""), ticket.get("商品", ""), ticket.get("文案", ""),
                     ticket.get("命中规则", ""),
                 ]).lower()
             )
         ]
         if tickets:
-            visible_columns = ["工单号", "优先级", "风险", "状态", "SLA状态", "广告主", "商品", "审核队列", "广告位", "提交时间"]
+            visible_columns = ["工单号", "行业", "优先级", "风险", "状态", "SLA状态", "广告主", "商品", "审核队列", "广告位", "提交时间"]
             task_rows = []
             for ticket in tickets:
                 row = {key: ticket.get(key, "") for key in visible_columns}
@@ -924,17 +997,37 @@ elif page == "审核工作台":
     if selected_ticket is None and tickets:
         selected_ticket = next(
             (ticket for ticket in tickets if ticket["工单号"] == st.session_state.selected_ticket_id),
-            tickets[0],
+            next((ticket for ticket in tickets if ticket.get("状态") in REVIEWABLE_STATUSES), tickets[0]),
         )
         st.session_state.selected_ticket_id = selected_ticket["工单号"]
     if selected_ticket:
         chosen = selected_ticket["工单号"]
         st.caption(f"当前任务：{chosen} · {selected_ticket.get('广告主', '')} · {selected_ticket.get('商品', '')}")
-        selected_workflow = run_review_agent(
-            selected_ticket.get("文案", DEFAULT_COPY), DEFAULT_LANDING, selected_ticket.get("行业", "护肤品"),
-            selected_ticket.get("商品", "待审商品"), "大众人群", None, True,
-            "闭眼入，黄脸婆，不买就亏",
+        cached_workflows = st.session_state.setdefault("workbench_workflows", {})
+        run_llm_review = st.button(
+            "运行 LLM 增强分析",
+            icon=":material/hub:",
+            disabled=not ReviewLLMAgent().available,
+            help="仅在点击后调用模型；筛选、选择和人工确认不会触发模型请求。",
         )
+        review_inputs = {
+            "copy": selected_ticket.get("文案", DEFAULT_COPY),
+            "landing": selected_ticket.get("落地页信息", ""),
+            "industry": selected_ticket.get("行业", "护肤品"),
+            "product": selected_ticket.get("商品", "待审商品"),
+            "audience": selected_ticket.get("目标人群") or "大众人群",
+            "uploaded": None,
+            "qualification": selected_ticket.get("资质已核验", False),
+            "brand_terms": selected_ticket.get("品牌禁用词", ""),
+        }
+        if run_llm_review:
+            with st.spinner("正在运行 LLM 增强分析…"):
+                cached_workflows[chosen] = run_review_agent(
+                    **review_inputs, use_llm=True,
+                )
+        selected_workflow = cached_workflows.get(chosen)
+        if selected_workflow is None:
+            selected_workflow = run_review_agent(**review_inputs)
         selected_report = selected_workflow["report"]
         selected_findings = selected_report["findings"]
         rag_results = selected_workflow["rag_results"]
@@ -995,17 +1088,27 @@ elif page == "审核工作台":
                     st.warning(f"以下模拟规则尚未绑定公开法规片段：{', '.join(unsupported)}。请人工检索，不生成依据。")
 
                 st.subheader("相似历史案例")
-                for case in similar_cases:
-                    with st.expander(f"{case['case_id']} · {case['decision']}"):
-                        st.write(case["copy"])
-                        st.caption(f"{case['category']} · 相似度 {case['score']:.0%} · {case['reason']}")
+                if not similar_cases:
+                    st.info("未找到达到相似度门槛的同品类历史案例。")
+                else:
+                    for case in similar_cases:
+                        with st.expander(f"{case['case_id']} · {case['decision']}"):
+                            st.write(case["copy"])
+                            st.caption(f"{case['category']} · 相似度 {case['score']:.0%} · {case['reason']}")
 
                 st.subheader("人工审核结论")
                 reviewer = st.session_state.current_user["name"]
                 st.caption(f"当前审核员：{reviewer} · {st.session_state.current_user['role']} · 已登录")
+                is_reviewable = selected_ticket.get("状态") in REVIEWABLE_STATUSES
+                if not is_reviewable:
+                    st.info(
+                        f"工单状态为“{selected_ticket.get('状态', '未知')}”，已结案记录仅供回放，不能再次裁决。",
+                        icon=":material/lock:",
+                    )
                 review_note = st.text_area(
                     "审核意见", value="", placeholder="填写判断依据、整改项或升级原因",
                     key=f"human_review_note_{chosen}",
+                    disabled=not is_reviewable,
                 )
                 confirmation_state = st.segmented_control(
                     "人工确认",
@@ -1014,8 +1117,9 @@ elif page == "审核工作台":
                     help="保存审核结论前，审核员必须确认已核验素材、政策依据和机器建议。",
                     key=f"human_confirm_state_{chosen}",
                     width="stretch",
+                    disabled=not is_reviewable,
                 )
-                confirmed = confirmation_state == "已确认"
+                confirmed = is_reviewable and confirmation_state == "已确认"
                 action_rows = [
                     [("通过", "已通过"), ("要求整改", "要求整改")],
                     [("驳回", "已驳回"), ("升级复核", "升级复核")],
@@ -1044,16 +1148,18 @@ elif page == "审核工作台":
 
 
 elif page == "规则中心":
-    page_header("POLICY KNOWLEDGE / 03", "规则与政策中心", "检索美妆审核规则和公开法规原文，风险结论只引用当前适用版本。")
+    page_header("POLICY KNOWLEDGE / 03", "规则与政策中心", "检索多品类审核规则和公开法规原文，风险结论只引用当前适用版本。")
     with st.container(border=True):
         st.subheader("执行规则")
-        s1, s2, s3 = st.columns([2, 1, 1])
-        with s1:
-            query = st.text_input("检索规则", placeholder="输入规则名称、ID 或关键词")
-        with s2:
-            industry_filter = st.selectbox("适用行业", ["全部", "通用", "护肤品"])
-        with s3:
-            level_filter = st.selectbox("风险等级", ["全部", "高", "中", "低"])
+        with st.form("rule_filters", border=False):
+            s1, s2, s3 = st.columns([2, 1, 1])
+            with s1:
+                query = st.text_input("检索规则", placeholder="输入规则名称、ID 或关键词")
+            with s2:
+                industry_filter = st.selectbox("适用品类", ["全部", "通用", *ALL_INDUSTRIES])
+            with s3:
+                level_filter = st.selectbox("风险等级", ["全部", "高", "中", "低"])
+            st.form_submit_button("应用筛选", icon=":material/search:")
     filtered = [p for p in POLICIES if (not query or query.lower() in (p["title"] + p["text"] + p["id"]).lower()) and (industry_filter == "全部" or p["industry"] == industry_filter) and (level_filter == "全部" or p["level"] == level_filter)]
     page_size = 10
     total_pages = max(1, (len(filtered) + page_size - 1) // page_size)
@@ -1073,7 +1179,7 @@ elif page == "规则中心":
                 st.markdown(f"**建议动作：** {policy['action']}")
 
     with st.expander("检索法规原文", icon=":material/search:", expanded=False):
-        legal_query = st.text_input("搜索条款关键词", placeholder="例如：绝对化用语、疾病预防、功效宣称、教育培训")
+        legal_query = st.text_input("搜索条款关键词", placeholder="例如：绝对化用语、食品功效、宠物饲料、产品安全")
         if legal_query:
             excerpt_hits = search_policy_query(legal_query, limit=8)
             q = legal_query.lower()
@@ -1111,7 +1217,7 @@ elif page == "规则中心":
         r1, r2 = st.columns(2)
         with r1:
             st.text_input("规则名称", "禁止制造容貌焦虑")
-            st.selectbox("适用范围", ["全部品牌", "护肤品牌 A", "食品品牌 B"])
+            st.selectbox("适用范围", ["全部品牌", "护肤品牌 A", "食品品牌 B", "宠物品牌 C", "数码品牌 D", "日用品牌 E"])
         with r2:
             st.text_area("规则内容", "不得使用贬低用户外貌、年龄或身材的表达。", height=100)
         st.button("保存为草稿", disabled=True, help="Demo 中仅展示权限边界，规则发布需要管理员审批")
@@ -1130,13 +1236,24 @@ else:
     with chart_col:
         with st.container(border=True):
             st.subheader("当前版本实际指标")
-            chart_data = {label: round(value * 100, 1) for label, value in evaluation}
-            st.bar_chart(chart_data, x_label="评测指标", y_label="百分比")
+            chart_data = [
+                {"指标": label, "百分比": round(value * 100, 1)}
+                for label, value in evaluation
+            ]
+            chart = alt.Chart(alt.Data(values=chart_data)).mark_bar().encode(
+                y=alt.Y("指标:N", sort=None, title=None, axis=alt.Axis(labelLimit=230)),
+                x=alt.X("百分比:Q", title="百分比", scale=alt.Scale(domain=[0, 100])),
+                tooltip=[alt.Tooltip("指标:N", title="指标"), alt.Tooltip("百分比:Q", title="百分比", format=".1f")],
+            ).properties(height=240)
+            labels = chart.mark_text(align="left", dx=4, color="#27384a").encode(
+                text=alt.Text("百分比:Q", format=".1f")
+            )
+            st.altair_chart(chart + labels, width="stretch")
             st.caption("误报率和改写残留率越低越好，其余指标越高越好。未配置 LLM 时，仅评估确定性规则流程。")
     with matrix_col:
         with st.container(border=True):
             st.subheader("评测口径")
-            st.write("评测集为 24 条自建美妆案例，标签包含是否风险、风险片段和是否升级人工。")
+            st.write("评测集为 44 条多品类自建案例，标签包含是否风险、风险片段和是否升级人工。")
             st.write("公开法规引用覆盖率只统计配置了明确 evidence chunk 的命中，不把模拟规则当作法律依据。")
             st.write("这些结果是本地运行结果，不代表线上生产效果或任何真实平台数据。")
     st.space("small")

@@ -28,5 +28,23 @@
     "status": "indexed",
     "characters": 916,
     "chunks": 1
+  },
+  {
+    "source_id": "LAW-PRODUCT-QUALITY",
+    "status": "indexed",
+    "characters": 8433,
+    "chunks": 10
+  },
+  {
+    "source_id": "MARA-PET-FEED-20",
+    "status": "indexed",
+    "characters": 4705,
+    "chunks": 5
+  },
+  {
+    "source_id": "REG-CONSUMER-2024",
+    "status": "indexed",
+    "characters": 6909,
+    "chunks": 8
   }
 ]

@@ -48,5 +48,35 @@
     "source_type": "修正决定",
     "retrieved_at": "2026-07-12",
     "verified": true
+  },
+  {
+    "id": "LAW-PRODUCT-QUALITY",
+    "title": "中华人民共和国产品质量法",
+    "authority": "国家市场监督管理总局",
+    "url": "https://www.samr.gov.cn/zfjcj/tzgg/art/2023/art_579118cd202a45fba28b7edfd9f6fd72.html",
+    "local_file": "legal_sources/product_quality_law.html",
+    "source_type": "法律",
+    "retrieved_at": "2026-07-13",
+    "verified": true
+  },
+  {
+    "id": "MARA-PET-FEED-20",
+    "title": "农业农村部公告第20号（宠物饲料管理规范）",
+    "authority": "农业农村部",
+    "url": "https://www.moa.gov.cn/govpublic/XMYS/201805/t20180504_6141413.htm",
+    "local_file": "legal_sources/pet_feed_announcement_20.html",
+    "source_type": "部门规范",
+    "retrieved_at": "2026-07-13",
+    "verified": true
+  },
+  {
+    "id": "REG-CONSUMER-2024",
+    "title": "中华人民共和国消费者权益保护法实施条例",
+    "authority": "中国政府网",
+    "url": "https://www.gov.cn/zhengce/content/202403/content_6940158.htm",
+    "local_file": "legal_sources/consumer_rights_implementation_2024.html",
+    "source_type": "行政法规",
+    "retrieved_at": "2026-07-13",
+    "verified": true
   }
 ]
