@@ -11,4 +11,3 @@ showWidgetBorder = true
 
 [server]
 headless = true
-
