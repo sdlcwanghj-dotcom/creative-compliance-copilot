@@ -11,4 +11,4 @@ showWidgetBorder = true
 
 [server]
 headless = true
-port = 8502
+
