@@ -23,6 +23,7 @@ from audit_store import (
 )
 from llm_agent import ReviewLLMAgent
 from models import ReviewViolation, StructuredReviewReport
+from review_graph import ReviewDeps, build_review_graph, run_review
 from policy_retrieval import (
     citations_for_findings,
     search_policy_query,
@@ -319,7 +320,7 @@ def extract_prices(text):
     return {int(value) for value in re.findall(r"(?<!\d)(\d{2,6})(?:元|块)", text)}
 
 
-def scan_material(copy, landing, industry, product, audience, uploaded, qualification, brand_terms):
+def scan_material(copy, landing, industry, product, audience, image_size, qualification, brand_terms):
     findings = []
     industry, industry_confidence, industry_source = classify_ad_industry(copy, product, industry)
     if industry == "待人工确认":
@@ -356,12 +357,12 @@ def scan_material(copy, landing, industry, product, audience, uploaded, qualific
     if regulated and not qualification:
         add_finding(findings, "行业资质缺失", f"{industry}资质文件", "当前行业属于重点审核范围，提交前需上传并核验主体或业务资质。", "高", "PLAT-CLEAR-003", "资质")
 
-    if uploaded and uploaded.size > 10 * 1024 * 1024:
-        add_finding(findings, "图片文件过大", f"{uploaded.size / 1024 / 1024:.1f}MB", "图片超过平台模拟规格上限 10MB，请压缩后重新上传。", "中", "PLAT-ASSET-009", "素材规格")
+    if image_size and image_size > 10 * 1024 * 1024:
+        add_finding(findings, "图片文件过大", f"{image_size / 1024 / 1024:.1f}MB", "图片超过平台模拟规格上限 10MB，请压缩后重新上传。", "中", "PLAT-ASSET-009", "素材规格")
 
     high = sum(f["severity"] == "高" for f in findings)
     medium = sum(f["severity"] == "中" for f in findings)
-    score = min(99, high * 24 + medium * 11 + (6 if not uploaded else 0))
+    score = min(99, high * 24 + medium * 11 + (6 if not image_size else 0))
     decision = "人工审核" if high >= 1 or regulated and not qualification else ("修改后提交" if findings else "通过")
     return {
         "report_id": f"PR-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
@@ -472,72 +473,38 @@ def report_json(report, selected_copy):
     return payload.model_dump_json(indent=2)
 
 
+_REVIEW_DEPS = ReviewDeps(
+    scan_material=scan_material,
+    retrieve_applicable_policy=retrieve_applicable_policy,
+    search_similar_cases=search_similar_cases,
+    generate_compliant_rewrite=generate_compliant_rewrite,
+    add_finding=add_finding,
+    get_policy_ids=lambda: {policy["id"] for policy in POLICIES},
+    llm_agent_class=ReviewLLMAgent,
+)
+
+
+@st.cache_resource
+def get_review_graph():
+    return build_review_graph(_REVIEW_DEPS)
+
+
 def run_review_agent(
     copy, landing, industry, product, audience, uploaded, qualification,
     brand_terms, use_llm=False,
 ):
-    """Run deterministic controls and optionally add model-planned semantic review."""
-    llm_agent = ReviewLLMAgent()
-    llm_plan = None
-    llm_error = None
-    context = {
-        "copy": copy, "landing_page": landing, "selected_industry": industry,
-        "product": product, "audience": audience, "has_image": uploaded is not None,
-        "qualification_verified": qualification,
-    }
-    if use_llm and llm_agent.available:
-        try:
-            llm_plan = llm_agent.plan_tools(context)
-        except Exception as error:
-            llm_error = f"模型规划不可用，已降级为确定性流程：{type(error).__name__}"
-    report = scan_material(copy, landing, industry, product, audience, uploaded, qualification, brand_terms)
-    llm_findings = []
-    if (
-        use_llm and llm_agent.available and llm_error is None and llm_plan
-        and "analyze_semantic_risk" in llm_plan["tools"]
-    ):
-        try:
-            llm_findings = llm_agent.analyze_semantic_risk(context, {policy["id"] for policy in POLICIES})
-            severity_map = {"high": "高", "medium": "中", "low": "低"}
-            for finding in llm_findings:
-                add_finding(
-                    report["findings"], finding["category"], finding["evidence"],
-                    finding["reason"], severity_map[finding["severity"]],
-                    finding["rule_id"], "LLM 语义分析",
-                )
-            if llm_findings:
-                report["risk_score"] = min(99, report["risk_score"] + 11 * len(llm_findings))
-                if any(item["severity"] == "high" for item in llm_findings):
-                    report["decision"] = "人工审核"
-                    report["human_review_required"] = True
-                elif report["decision"] == "通过":
-                    report["decision"] = "修改后提交"
-        except Exception as error:
-            llm_error = f"模型语义分析不可用，已保留确定性结果：{type(error).__name__}"
-    rag_results = retrieve_applicable_policy(copy, report["findings"], limit=3)
-    similar = search_similar_cases(copy, industry=report["industry"], limit=3)
-    rewrites = generate_compliant_rewrite(copy, product, audience, report["findings"])
-    trace = [
-        {"tool": "classify_ad_industry", "status": "completed", "summary": f"行业：{report['industry']}（{report['industry_source']}）"},
-        {"tool": "check_forbidden_words", "status": "completed", "summary": f"命中 {len(report['findings'])} 个风险项"},
-        {"tool": "retrieve_applicable_policy", "status": "completed", "summary": f"召回 {len(rag_results)} 条政策片段"},
-        {"tool": "search_similar_cases", "status": "completed", "summary": f"召回 {len(similar)} 条历史案例"},
-        {"tool": "analyze_semantic_risk", "status": "completed", "summary": "完成隐含语义风险分析"},
-        {"tool": "generate_compliant_rewrite", "status": "completed", "summary": "生成 3 个受约束版本"},
-    ]
-    if llm_plan:
-        trace.insert(0, {"tool": "llm_plan_tools", "status": "completed", "summary": llm_plan["summary"]})
-    elif llm_error:
-        trace.insert(0, {"tool": "llm_plan_tools", "status": "degraded", "summary": llm_error})
-    else:
-        summary = (
-            "未配置模型，运行可复现的离线审核流程"
-            if not llm_agent.available
-            else "未请求模型增强，运行快速确定性审核流程"
-        )
-        trace.insert(0, {"tool": "llm_plan_tools", "status": "skipped", "summary": summary})
-    report["execution_mode"] = "LLM Agent 增强" if llm_plan and not llm_error else "离线确定性流程"
-    return {"report": report, "rag_results": rag_results, "similar_cases": similar, "rewrites": rewrites, "trace": trace}
+    """Adapter over the LangGraph orchestration in ``review_graph``.
+
+    Deterministic red-line controls and the LLM tool planner both live inside
+    the compiled graph; this wrapper keeps the legacy call sites and return
+    shape unchanged, translating the Streamlit upload into a plain byte size.
+    """
+    return run_review(
+        get_review_graph(), _REVIEW_DEPS,
+        copy=copy, landing=landing, industry=industry, product=product,
+        audience=audience, image_size=(uploaded.size if uploaded else 0),
+        qualification=qualification, brand_terms=brand_terms, use_llm=use_llm,
+    )
 
 
 def badge(text, tone="blue"):
@@ -832,7 +799,7 @@ if page == "机器预审":
     with result_col:
         report = st.session_state.current_report
         if report is None:
-            report = scan_material(copy, landing, industry, product, audience, uploaded, qualification, brand_terms)
+            report = scan_material(copy, landing, industry, product, audience, uploaded.size if uploaded else 0, qualification, brand_terms)
             st.session_state.current_report = report
         findings = report["findings"]
         variants = generate_compliant_rewrite(report["copy"], report["product"], report["audience"], findings)

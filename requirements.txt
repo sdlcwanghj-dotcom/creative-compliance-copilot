@@ -4,5 +4,6 @@ pypdf>=5.0
 requests>=2.32
 python-dotenv>=1.0
 pydantic>=2.0,<3
+langgraph>=0.2
 rapidocr>=3.4
 onnxruntime>=1.18
