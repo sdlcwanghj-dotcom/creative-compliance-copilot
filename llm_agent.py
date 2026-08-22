@@ -72,14 +72,18 @@ policy retrieval. Select image/OCR tools only when appropriate. Do not provide c
         tools = [tool for tool in result.get("tools", []) if tool in ALLOWED_TOOLS]
         return {"tools": tools, "summary": str(result.get("summary", "模型已选择审核工具"))[:200]}
 
-    def analyze_semantic_risk(self, context, allowed_rule_ids):
+    def analyze_semantic_risk(self, context, allowed_rule_ids, context_snippets=None):
+        payload = {**context, "allowed_rule_ids": sorted(allowed_rule_ids)}
+        if context_snippets:
+            payload["retrieved_statutes"] = context_snippets
         result = self._json_completion(
             """You assist human ad reviewers. Identify implicit semantic risks missed by exact
 rules. Return JSON {violations:[...]}. Each violation must contain category, evidence, reason,
 rule_id, severity(high|medium|low), confidence(0..1). Evidence must be an exact substring of
-the supplied copy. Use only allowed_rule_ids. Do not invent policy or product facts. Return an
-empty list when uncertain.""",
-            {**context, "allowed_rule_ids": sorted(allowed_rule_ids)},
+the supplied copy. Use only allowed_rule_ids. Ground your reasoning in retrieved_statutes when
+provided; do not invent policy or product facts beyond them. Return an empty list when
+uncertain.""",
+            payload,
         )
         validated = []
         copy = context.get("copy", "")

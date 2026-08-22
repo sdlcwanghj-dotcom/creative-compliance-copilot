@@ -35,6 +35,7 @@ def _make_deps(agent_class):
     return ReviewDeps(
         scan_material=_fake_scan,
         retrieve_applicable_policy=lambda copy, findings, limit=3: [{"id": "P1"}],
+        retrieve_context_snippets=lambda copy, limit=4: [],
         search_similar_cases=lambda copy, industry=None, limit=3: [{"score": 1.0}],
         generate_compliant_rewrite=lambda copy, product, audience, findings: {"safe": copy},
         add_finding=_fake_add_finding,
@@ -49,7 +50,7 @@ class OfflineAgent:
     def plan_tools(self, context):
         raise AssertionError("plan_tools must not run when LLM is unavailable")
 
-    def analyze_semantic_risk(self, context, allowed_rule_ids):
+    def analyze_semantic_risk(self, context, allowed_rule_ids, context_snippets=None):
         raise AssertionError("semantic node must not run when LLM is unavailable")
 
 
@@ -59,7 +60,7 @@ class SemanticAgent:
     def plan_tools(self, context):
         return {"tools": ["analyze_semantic_risk"], "summary": "已选择语义分析"}
 
-    def analyze_semantic_risk(self, context, allowed_rule_ids):
+    def analyze_semantic_risk(self, context, allowed_rule_ids, context_snippets=None):
         return [{
             "category": "隐含承诺", "evidence": "婴儿肌", "reason": "暗示疗效",
             "severity": "high", "rule_id": "AD-001",
@@ -72,7 +73,7 @@ class PlannerSkipsSemanticAgent:
     def plan_tools(self, context):
         return {"tools": ["retrieve_applicable_policy"], "summary": "仅确定性检查"}
 
-    def analyze_semantic_risk(self, context, allowed_rule_ids):
+    def analyze_semantic_risk(self, context, allowed_rule_ids, context_snippets=None):
         raise AssertionError("semantic node must be gated out by the planner")
 
 
@@ -82,7 +83,7 @@ class PlannerRaisesAgent:
     def plan_tools(self, context):
         raise RuntimeError("endpoint down")
 
-    def analyze_semantic_risk(self, context, allowed_rule_ids):
+    def analyze_semantic_risk(self, context, allowed_rule_ids, context_snippets=None):
         raise AssertionError("semantic node must not run after a planner failure")
 
 

@@ -46,6 +46,7 @@ class ReviewState(TypedDict, total=False):
     llm_plan: Optional[dict]
     llm_error: Optional[str]
     llm_findings: list
+    llm_context_snippets: list
     # Outputs consumed by the UI.
     report: Optional[dict]
     rag_results: list
@@ -60,6 +61,7 @@ class ReviewDeps:
 
     scan_material: Callable[..., dict]
     retrieve_applicable_policy: Callable[..., list]
+    retrieve_context_snippets: Callable[..., list]
     search_similar_cases: Callable[..., list]
     generate_compliant_rewrite: Callable[..., dict]
     add_finding: Callable[..., None]
@@ -99,11 +101,23 @@ def _build_nodes(deps: ReviewDeps):
         )
         return {"report": report}
 
+    def retrieve_context(state: ReviewState) -> dict:
+        """RAG recall of statute text to ground the semantic node.
+
+        Best-effort: any failure yields empty snippets so ``semantic_llm`` still
+        runs (equivalent to the pre-RAG behaviour)."""
+        try:
+            snippets = deps.retrieve_context_snippets(state["copy"])
+        except Exception:
+            snippets = []
+        return {"llm_context_snippets": snippets}
+
     def semantic_llm(state: ReviewState) -> dict:
         agent = deps.llm_agent_class()
         try:
             findings = agent.analyze_semantic_risk(
-                _llm_context(state), deps.get_policy_ids()
+                _llm_context(state), deps.get_policy_ids(),
+                context_snippets=state.get("llm_context_snippets", []),
             )
             return {"llm_findings": findings, "llm_error": None}
         except Exception as error:
@@ -179,6 +193,7 @@ def _build_nodes(deps: ReviewDeps):
     return {
         "plan": plan,
         "deterministic_scan": deterministic_scan,
+        "retrieve_context": retrieve_context,
         "semantic_llm": semantic_llm,
         "merge_llm_findings": merge_llm_findings,
         "retrieve_policy": retrieve_policy,
@@ -206,7 +221,7 @@ def _route_after_scan(state: ReviewState) -> str:
         and plan_result
         and "analyze_semantic_risk" in plan_result.get("tools", [])
     ):
-        return "semantic_llm"
+        return "retrieve_context"
     return "retrieve_policy"
 
 
@@ -222,8 +237,9 @@ def build_review_graph(deps: ReviewDeps, checkpointer=None):
     builder.add_edge("plan", "deterministic_scan")
     builder.add_conditional_edges(
         "deterministic_scan", _route_after_scan,
-        {"semantic_llm": "semantic_llm", "retrieve_policy": "retrieve_policy"},
+        {"retrieve_context": "retrieve_context", "retrieve_policy": "retrieve_policy"},
     )
+    builder.add_edge("retrieve_context", "semantic_llm")
     builder.add_edge("semantic_llm", "merge_llm_findings")
     builder.add_edge("merge_llm_findings", "retrieve_policy")
     builder.add_edge("retrieve_policy", "search_cases")

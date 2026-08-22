@@ -30,6 +30,7 @@ from policy_retrieval import (
     unsupported_rule_ids,
     validate_evidence_bindings,
 )
+from vector_retrieval import hybrid_search, RAG_TOP_K
 
 
 st.set_page_config(
@@ -270,6 +271,25 @@ def retrieve_applicable_policy(query, findings, limit=3):
     return citations_for_findings(findings, limit=limit)
 
 
+def retrieve_context_snippets(copy, limit=RAG_TOP_K):
+    """Candidate statute text for grounding the LLM semantic node.
+
+    This is *recall for the model*, not bound evidence — kept separate from
+    ``retrieve_applicable_policy`` so the deterministic citation path is
+    untouched. Returns compact dicts to keep ReviewState JSON-serializable."""
+    hits = hybrid_search(copy, limit=limit)
+    return [
+        {
+            "id": hit["id"],
+            "title": hit["title"],
+            "article": hit.get("article", ""),
+            "excerpt": hit["excerpt"],
+            "citation_type": hit["citation_type"],
+        }
+        for hit in hits
+    ]
+
+
 def add_finding(findings, category, evidence, reason, severity, policy, source="文案"):
     key = (category, evidence, source)
     if not any((f["category"], f["evidence"], f["source"]) == key for f in findings):
@@ -476,6 +496,7 @@ def report_json(report, selected_copy):
 _REVIEW_DEPS = ReviewDeps(
     scan_material=scan_material,
     retrieve_applicable_policy=retrieve_applicable_policy,
+    retrieve_context_snippets=retrieve_context_snippets,
     search_similar_cases=search_similar_cases,
     generate_compliant_rewrite=generate_compliant_rewrite,
     add_finding=add_finding,
@@ -1148,15 +1169,17 @@ elif page == "规则中心":
     with st.expander("检索法规原文", icon=":material/search:", expanded=False):
         legal_query = st.text_input("搜索条款关键词", placeholder="例如：绝对化用语、食品功效、宠物饲料、产品安全")
         if legal_query:
-            excerpt_hits = search_policy_query(legal_query, limit=8)
+            excerpt_hits = hybrid_search(legal_query, limit=8)
             q = legal_query.lower()
             legal_hits = [chunk for chunk in LEGAL_INDEX if q in chunk["text"].lower()][:8]
             st.caption(f"命中 {len(excerpt_hits) + len(legal_hits)} 个条款/原文片段")
+            score_labels = {"bm25": "BM25", "vector": "语义", "hybrid": "混合"}
             for item in excerpt_hits:
                 source = next((source for source in SOURCES if source["id"] == item["source_id"]), None)
+                label = score_labels.get(item.get("citation_type", "bm25"), "BM25")
                 st.markdown(f'**{item["title"]} · {item["article"]}**')
                 st.write(item["excerpt"])
-                st.caption(f'BM25 {item["score"]:.2f} · {item["interpretation"]} · [官方页面]({source["url"] if source else "https://www.gov.cn/"})')
+                st.caption(f'{label} {item["score"]:.2f} · {item["interpretation"]} · [官方页面]({source["url"] if source else "https://www.gov.cn/"})')
             for chunk in legal_hits:
                 st.markdown(f'**{chunk["title"]} · {chunk["chunk_id"]}**')
                 st.write(chunk["text"][:1100])
